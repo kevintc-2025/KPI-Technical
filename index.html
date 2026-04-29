@@ -1011,16 +1011,12 @@ function qf(type){
   _qf=type;
   document.querySelectorAll('.view').forEach(function(e){e.classList.remove('active');});
   var vEl=document.getElementById('view-tasks');if(vEl)vEl.classList.add('active');
-  var VIEWS2=['dashboard','tasks','add','reports','team','accounts'];
-  VIEWS2.forEach(function(n){var b=$('sbi-'+n);if(b)b.classList.toggle('active',n==='tasks');});
-  var at=$('admin-tasks-view'),mt=$('member-tasks-view'),ab=$('tasks-add-btn');
+  ['dashboard','tasks','add','reports','team','accounts'].forEach(function(n){var b=document.getElementById('sbi-'+n);if(b)b.classList.toggle('active',n==='tasks');});
+  var at=document.getElementById('admin-tasks-view'),mt=document.getElementById('member-tasks-view'),ab=document.getElementById('tasks-add-btn');
   if(at)at.style.display='';if(mt)mt.style.display='none';
   if(ab)ab.style.display=isAdmin()?'':'none';
-  if(type==='overdue'){
-    var yr=$('tyr'),mo=$('tmo');if(yr)yr.value='';if(mo)mo.value='';
-  } else {
-    setTaskDefaultPeriod();
-  }
+  if(type==='overdue'){var yr=document.getElementById('tyr'),mo=document.getElementById('tmo');if(yr)yr.value='';if(mo)mo.value='';}
+  else{setTaskDefaultPeriod();}
   if(isAdmin())renderTbl();else renderMyTasks();
 }
 
@@ -1980,7 +1976,7 @@ function exportPDFFromTasks(tasks, filename, filterDesc){
 function importJSON(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=function(ev){
     try{
       const data=JSON.parse(ev.target.result);
       let taskCount=0,accCount=0;
@@ -1988,15 +1984,11 @@ function importJSON(e){
         TASKS=data.tasks;saveTasks();taskCount=TASKS.length;
       }
       if(data.accounts&&Array.isArray(data.accounts)){
-        data.accounts.forEach(function(imported){
-          if(!imported.id)return;
-          var idx=ACCOUNTS.findIndex(function(x){return x.id===imported.id;});
-          if(idx>=0){
-            if(ACCOUNTS[idx].role==='admin')return;
-            ACCOUNTS[idx]=Object.assign({},ACCOUNTS[idx],imported);
-          } else {
-            ACCOUNTS.push(imported);
-          }
+        data.accounts.forEach(function(imp){
+          if(!imp.id)return;
+          var idx=ACCOUNTS.findIndex(function(x){return x.id===imp.id;});
+          if(idx>=0){if(ACCOUNTS[idx].role==='admin')return;ACCOUNTS[idx]=Object.assign({},ACCOUNTS[idx],imp);}
+          else{ACCOUNTS.push(imp);}
         });
         saveAccounts();accCount=data.accounts.length;
       }
@@ -2008,7 +2000,7 @@ function importJSON(e){
       ACCOUNTS=JSON.parse(localStorage.getItem(SK.accounts)||'null')||DEFAULT_ACCOUNTS;
       NOTIFS=JSON.parse(localStorage.getItem(SK.notifs)||'[]');
       refreshAllViews();
-      var msg='Imported '+taskCount+' task'+(taskCount!==1?'s':'')+(accCount?' & '+accCount+' account'+(accCount!==1?'s':'')+''  :'')+' \u2014 data saved!';
+      const msg='Imported '+taskCount+' task'+(taskCount!==1?'s':'')+(accCount?' & '+accCount+' account'+(accCount!==1?'s':'')+''  :'')+' saved!';
       toast(msg,'gr');
     }catch(err){console.error('Import error:',err);toast('Invalid JSON file','rd');}
     e.target.value='';
