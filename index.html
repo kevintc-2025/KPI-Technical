@@ -36,22 +36,34 @@
 
   // Load all data from Firestore, then start the app
   window._fbLoad = function(callback) {
-    Promise.all([
-      _db.collection('kpi').doc('tasks').get(),
-      _db.collection('kpi').doc('accounts').get(),
-      _db.collection('kpi').doc('notifs').get(),
-      _db.collection('kpi').doc('yearRange').get()
-    ]).then(function(snaps) {
-      var result = {};
-      var keys = ['tasks','accounts','notifs','yearRange'];
-      snaps.forEach(function(snap, i) {
-        result[keys[i]] = snap.exists ? snap.data().value : null;
+    var retries = 0;
+    var maxRetries = 3;
+
+    function attempt() {
+      Promise.all([
+        _db.collection('kpi').doc('tasks').get(),
+        _db.collection('kpi').doc('accounts').get(),
+        _db.collection('kpi').doc('notifs').get(),
+        _db.collection('kpi').doc('yearRange').get()
+      ]).then(function(snaps) {
+        var result = {};
+        var keys = ['tasks','accounts','notifs','yearRange'];
+        snaps.forEach(function(snap, i) {
+          result[keys[i]] = snap.exists ? snap.data().value : null;
+        });
+        callback(null, result);
+      }).catch(function(err) {
+        console.warn('Firebase attempt ' + (retries+1) + ' failed: ' + err.message);
+        if(retries < maxRetries) {
+          retries++;
+          setTimeout(attempt, 2000 * retries); // wait 2s, 4s, 6s
+        } else {
+          console.warn('Firebase load error: ' + err.message);
+          callback(err, {});
+        }
       });
-      callback(null, result);
-    }).catch(function(err) {
-      console.warn('Firebase load error:', err.message);
-      callback(err, {});
-    });
+    }
+    attempt();
   };
   } // end else (firebase defined)
 </script>
@@ -2050,9 +2062,9 @@ function importJSON(e){
   var overlay=document.getElementById('fb-loading');
   var prog=0;
   var anim=setInterval(function(){
-    prog=Math.min(prog+4,85);
+    prog=Math.min(prog+1,85);
     if(bar)bar.style.width=prog+'%';
-  },60);
+  },150);
 
   function applyAndStart(fbData){
     clearInterval(anim);
@@ -2121,7 +2133,6 @@ function importJSON(e){
     });
   } else {
     applyAndStart({});
-    
   }
 })();
 </script>
