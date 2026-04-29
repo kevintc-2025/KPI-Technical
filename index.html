@@ -7,6 +7,75 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.emailjs.com/dist/email.min.js"></script>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXULUKieJPALYC6K8hEUAvhQwyt8ReVuw",
+    authDomain: "technical-kpi.firebaseapp.com",
+    projectId: "technical-kpi",
+    storageBucket: "technical-kpi.firebasestorage.app",
+    messagingSenderId: "789356477707",
+    appId: "1:789356477707:web:a60787b881637d6119360e"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // ── Firestore helpers ──────────────────────────────────────────────────────
+  async function fbGet(docPath) {
+    try {
+      const snap = await getDoc(doc(db, docPath));
+      return snap.exists() ? snap.data().value : null;
+    } catch(e) { console.warn('fbGet error', docPath, e); return null; }
+  }
+
+  async function fbSet(docPath, value) {
+    try {
+      await setDoc(doc(db, docPath), { value }, { merge: false });
+    } catch(e) { console.warn('fbSet error', docPath, e); }
+  }
+
+  // Expose to window so non-module code can call them
+  window._fbReady = false;
+  window._fbGet = fbGet;
+  window._fbSet = fbSet;
+  window._fbReady = true;
+
+  // ── Load data from Firestore on page start ─────────────────────────────────
+  async function loadFromFirebase() {
+    const [fbTasks, fbAccounts, fbNotifs, fbYearRange] = await Promise.all([
+      fbGet('kpi/tasks'),
+      fbGet('kpi/accounts'),
+      fbGet('kpi/notifs'),
+      fbGet('kpi/yearRange'),
+    ]);
+
+    if (fbTasks !== null) {
+      window.TASKS = fbTasks;
+      localStorage.setItem('tsc_tasks', JSON.stringify(fbTasks));
+    }
+    if (fbAccounts !== null) {
+      window.ACCOUNTS = fbAccounts;
+      localStorage.setItem('tsc_accounts', JSON.stringify(fbAccounts));
+    }
+    if (fbNotifs !== null) {
+      window.NOTIFS = fbNotifs;
+      localStorage.setItem('tsc_notifs', JSON.stringify(fbNotifs));
+    }
+    if (fbYearRange !== null) {
+      window.YEAR_RANGE = fbYearRange;
+      localStorage.setItem('tsc_year_range', JSON.stringify(fbYearRange));
+    }
+
+    // Signal app that Firebase data is loaded
+    window.dispatchEvent(new Event('firebase-loaded'));
+  }
+
+  loadFromFirebase();
+</script>
 <style>
 :root{
   --bg:#f0f2f8;--bg2:#e4e8f2;--card:#ffffff;--border:#e0e5f0;--border2:#cdd5e8;
@@ -333,6 +402,15 @@ tbody tr:last-child td{border-bottom:none;}
 </style>
 </head>
 <body>
+
+<!-- ══════════ FIREBASE LOADING ══════════ -->
+<div id="fb-loading" style="position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#5a0a0a 0%,#8b1a1a 50%,#3d1010 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+  <div style="width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;">TC</div>
+  <div style="color:#fff;font-family:'Outfit',sans-serif;font-size:15px;font-weight:600;opacity:.9;">Loading data…</div>
+  <div style="width:180px;height:4px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden;">
+    <div id="fb-bar" style="height:100%;width:0%;background:#fff;border-radius:4px;transition:width .4s ease;"></div>
+  </div>
+</div>
 
 <!-- ══════════ LOGIN ══════════ -->
 <div id="login-screen">
@@ -832,11 +910,11 @@ const DEFAULT_ACCOUNTS=[
 let ACCOUNTS=JSON.parse(localStorage.getItem(SK.accounts)||'null')||DEFAULT_ACCOUNTS;
 let CU=null;
 const isAdmin=()=>CU?.role==='admin';
-function saveAccounts(){localStorage.setItem(SK.accounts,JSON.stringify(ACCOUNTS));}
+function saveAccounts(){localStorage.setItem(SK.accounts,JSON.stringify(ACCOUNTS));if(window._fbSet)window._fbSet('kpi/accounts',ACCOUNTS);}
 const CYEAR=new Date().getFullYear();
 const DEFAULT_YEAR_RANGE={min:CYEAR-4,max:CYEAR+4};
 let YEAR_RANGE=JSON.parse(localStorage.getItem(SK.yearRange)||'null')||DEFAULT_YEAR_RANGE;
-function saveYearRange(){localStorage.setItem(SK.yearRange,JSON.stringify(YEAR_RANGE));}
+function saveYearRange(){localStorage.setItem(SK.yearRange,JSON.stringify(YEAR_RANGE));if(window._fbSet)window._fbSet('kpi/yearRange',YEAR_RANGE);}
 
 // ─── LOGIN ────────────────────────────────────
 function doLogin(){
@@ -857,8 +935,8 @@ const MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 let TASKS=JSON.parse(localStorage.getItem(SK.tasks)||'[]');
 let NOTIFS=JSON.parse(localStorage.getItem(SK.notifs)||'[]');
 
-function saveTasks(){localStorage.setItem(SK.tasks,JSON.stringify(TASKS));}
-function saveNotifs(){localStorage.setItem(SK.notifs,JSON.stringify(NOTIFS));}
+function saveTasks(){localStorage.setItem(SK.tasks,JSON.stringify(TASKS));if(window._fbSet)window._fbSet('kpi/tasks',TASKS);}
+function saveNotifs(){localStorage.setItem(SK.notifs,JSON.stringify(NOTIFS));if(window._fbSet)window._fbSet('kpi/notifs',NOTIFS);}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
 function $(id){return document.getElementById(id);}
 function set(id,v){const e=$(id);if(e)e.textContent=v;}
@@ -1996,9 +2074,13 @@ function importJSON(e){
       if(data.yearRange&&typeof data.yearRange==='object'){
         YEAR_RANGE=Object.assign({},YEAR_RANGE,data.yearRange);saveYearRange();
       }
-      TASKS=JSON.parse(localStorage.getItem(SK.tasks)||'[]');
-      ACCOUNTS=JSON.parse(localStorage.getItem(SK.accounts)||'null')||DEFAULT_ACCOUNTS;
-      NOTIFS=JSON.parse(localStorage.getItem(SK.notifs)||'[]');
+      // Re-read from memory (already updated above) and sync to Firebase
+      if(window._fbSet){
+        window._fbSet('kpi/tasks',TASKS);
+        window._fbSet('kpi/accounts',ACCOUNTS);
+        window._fbSet('kpi/notifs',NOTIFS);
+        if(data.yearRange)window._fbSet('kpi/yearRange',YEAR_RANGE);
+      }
       refreshAllViews();
       const msg='Imported '+taskCount+' task'+(taskCount!==1?'s':'')+(accCount?' & '+accCount+' account'+(accCount!==1?'s':'')+''  :'')+' saved!';
       toast(msg,'gr');
@@ -2006,6 +2088,43 @@ function importJSON(e){
     e.target.value='';
   };reader.readAsText(file);
 }
+// ─── FIREBASE INIT SYNC ───────────────────────
+(function(){
+  const bar=document.getElementById('fb-bar');
+  // animate bar while loading
+  let prog=0;
+  const anim=setInterval(()=>{prog=Math.min(prog+3,85);if(bar)bar.style.width=prog+'%';},80);
+
+  function onFirebaseLoaded(){
+    clearInterval(anim);
+    if(bar)bar.style.width='100%';
+    // Override in-memory arrays with whatever Firebase returned (already synced to localStorage)
+    const fbTasks=localStorage.getItem(SK.tasks);
+    const fbAccounts=localStorage.getItem(SK.accounts);
+    const fbNotifs=localStorage.getItem(SK.notifs);
+    const fbYearRange=localStorage.getItem(SK.yearRange);
+    if(fbTasks)TASKS=JSON.parse(fbTasks);
+    if(fbAccounts)ACCOUNTS=JSON.parse(fbAccounts)||DEFAULT_ACCOUNTS;
+    if(fbNotifs)NOTIFS=JSON.parse(fbNotifs);
+    if(fbYearRange)YEAR_RANGE=JSON.parse(fbYearRange)||DEFAULT_YEAR_RANGE;
+    setTimeout(()=>{
+      const overlay=document.getElementById('fb-loading');
+      if(overlay)overlay.style.display='none';
+    },300);
+  }
+
+  if(window._fbReady){
+    onFirebaseLoaded();
+  } else {
+    // Wait for firebase-loaded event (fired by module after Firestore fetch)
+    window.addEventListener('firebase-loaded',onFirebaseLoaded,{once:true});
+    // Safety timeout: if Firebase takes > 6s, just proceed anyway
+    setTimeout(()=>{
+      window.removeEventListener('firebase-loaded',onFirebaseLoaded);
+      onFirebaseLoaded();
+    },6000);
+  }
+})();
 </script>
 </body>
 </html>
