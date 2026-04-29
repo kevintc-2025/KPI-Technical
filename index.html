@@ -995,19 +995,34 @@ function sv(v){
   VIEWS.forEach(n=>{const b=$('sbi-'+n);if(b)b.classList.toggle('active',n===v);});
   if(v==='dashboard')renderDash();
   if(v==='tasks'){
+    _qf='';
     setTaskDefaultPeriod();
     $('admin-tasks-view').style.display='';
     $('member-tasks-view').style.display='none';
     const addBtn=$('tasks-add-btn');if(addBtn)addBtn.style.display=isAdmin()?'':'none';
     renderTbl();
-    _qf='';
   }
   if(v==='add'){if(!isAdmin()){sv('dashboard');return;}populateAssigneeChecks('f-assignees');}
   if(v==='reports')renderReports();
   if(v==='team')renderTeam();
   if(v==='accounts'){if(!isAdmin()){sv('dashboard');return;}renderAccounts();renderYearRangeSettings();}
 }
-function qf(type){sv('tasks');_qf=type;if(isAdmin())renderTbl();else renderMyTasks();}
+function qf(type){
+  _qf=type;
+  document.querySelectorAll('.view').forEach(function(e){e.classList.remove('active');});
+  var vEl=document.getElementById('view-tasks');if(vEl)vEl.classList.add('active');
+  var VIEWS2=['dashboard','tasks','add','reports','team','accounts'];
+  VIEWS2.forEach(function(n){var b=$('sbi-'+n);if(b)b.classList.toggle('active',n==='tasks');});
+  var at=$('admin-tasks-view'),mt=$('member-tasks-view'),ab=$('tasks-add-btn');
+  if(at)at.style.display='';if(mt)mt.style.display='none';
+  if(ab)ab.style.display=isAdmin()?'':'none';
+  if(type==='overdue'){
+    var yr=$('tyr'),mo=$('tmo');if(yr)yr.value='';if(mo)mo.value='';
+  } else {
+    setTaskDefaultPeriod();
+  }
+  if(isAdmin())renderTbl();else renderMyTasks();
+}
 
 // ─── DROPDOWNS ────────────────────────────────
 function populateYears(){
@@ -1264,6 +1279,7 @@ function setTaskDefaultPeriod(force=false){
 
 function renderTbl(){
   populateTaskFilters();
+  if(!_qf)setTaskDefaultPeriod();
   const sr=($('ts')?.value||'').toLowerCase();
   const fst=$('tst')?.value||'',fpr=$('tpr')?.value||'',fca=$('tca')?.value||'';
   const fen=$('ten')?.value||'',fyr=$('tyr')?.value||'',fmo=$('tmo')?.value||'';
@@ -1967,14 +1983,34 @@ function importJSON(e){
   reader.onload=ev=>{
     try{
       const data=JSON.parse(ev.target.result);
-      if(data.tasks&&Array.isArray(data.tasks)){TASKS=data.tasks;saveTasks();}
-      if(data.accounts&&Array.isArray(data.accounts)){
-        data.accounts.forEach(a=>{if(!ACCOUNTS.find(x=>x.id===a.id))ACCOUNTS.push(a);});
-        saveAccounts();
+      let taskCount=0,accCount=0;
+      if(data.tasks&&Array.isArray(data.tasks)){
+        TASKS=data.tasks;saveTasks();taskCount=TASKS.length;
       }
+      if(data.accounts&&Array.isArray(data.accounts)){
+        data.accounts.forEach(function(imported){
+          if(!imported.id)return;
+          var idx=ACCOUNTS.findIndex(function(x){return x.id===imported.id;});
+          if(idx>=0){
+            if(ACCOUNTS[idx].role==='admin')return;
+            ACCOUNTS[idx]=Object.assign({},ACCOUNTS[idx],imported);
+          } else {
+            ACCOUNTS.push(imported);
+          }
+        });
+        saveAccounts();accCount=data.accounts.length;
+      }
+      if(data.notifs&&Array.isArray(data.notifs)){NOTIFS=data.notifs;saveNotifs();}
+      if(data.yearRange&&typeof data.yearRange==='object'){
+        YEAR_RANGE=Object.assign({},YEAR_RANGE,data.yearRange);saveYearRange();
+      }
+      TASKS=JSON.parse(localStorage.getItem(SK.tasks)||'[]');
+      ACCOUNTS=JSON.parse(localStorage.getItem(SK.accounts)||'null')||DEFAULT_ACCOUNTS;
+      NOTIFS=JSON.parse(localStorage.getItem(SK.notifs)||'[]');
       refreshAllViews();
-      toast(`Imported ${data.tasks?.length||0} tasks! 📥`,'gr');
-    }catch{toast('Invalid JSON file','rd');}
+      var msg='Imported '+taskCount+' task'+(taskCount!==1?'s':'')+(accCount?' & '+accCount+' account'+(accCount!==1?'s':'')+''  :'')+' \u2014 data saved!';
+      toast(msg,'gr');
+    }catch(err){console.error('Import error:',err);toast('Invalid JSON file','rd');}
     e.target.value='';
   };reader.readAsText(file);
 }
