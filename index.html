@@ -7,74 +7,53 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.emailjs.com/dist/email.min.js"></script>
-<!-- Firebase SDK -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-  const firebaseConfig = {
+<!-- Firebase Compat SDK via cdnjs (confirmed available) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.13.0/firebase-app-compat.min.js" onerror="console.warn('Firebase app CDN failed')"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.13.0/firebase-firestore-compat.min.js" onerror="console.warn('Firebase firestore CDN failed')"></script>
+<script>
+  // Initialize Firebase — guard in case CDN failed to load
+  if(typeof firebase === 'undefined'){
+    console.warn('Firebase SDK not loaded. Running on localStorage only.');
+    window._fbSet = function(){};
+    window._fbLoad = function(cb){ cb(null, {}); };
+  } else {
+  const _fbApp = firebase.initializeApp({
     apiKey: "AIzaSyBXULUKieJPALYC6K8hEUAvhQwyt8ReVuw",
     authDomain: "technical-kpi.firebaseapp.com",
     projectId: "technical-kpi",
     storageBucket: "technical-kpi.firebasestorage.app",
     messagingSenderId: "789356477707",
     appId: "1:789356477707:web:a60787b881637d6119360e"
+  });
+  const _db = firebase.firestore();
+
+  // Global save function — called by saveTasks(), saveAccounts(), etc.
+  window._fbSet = function(docPath, value) {
+    const parts = docPath.split('/');
+    _db.collection(parts[0]).doc(parts[1]).set({ value: value })
+      .catch(function(e){ console.warn('Firebase write error:', e.message); });
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  // ── Firestore helpers ──────────────────────────────────────────────────────
-  async function fbGet(docPath) {
-    try {
-      const snap = await getDoc(doc(db, docPath));
-      return snap.exists() ? snap.data().value : null;
-    } catch(e) { console.warn('fbGet error', docPath, e); return null; }
-  }
-
-  async function fbSet(docPath, value) {
-    try {
-      await setDoc(doc(db, docPath), { value }, { merge: false });
-    } catch(e) { console.warn('fbSet error', docPath, e); }
-  }
-
-  // Expose to window so non-module code can call them
-  window._fbReady = false;
-  window._fbGet = fbGet;
-  window._fbSet = fbSet;
-  window._fbReady = true;
-
-  // ── Load data from Firestore on page start ─────────────────────────────────
-  async function loadFromFirebase() {
-    const [fbTasks, fbAccounts, fbNotifs, fbYearRange] = await Promise.all([
-      fbGet('kpi/tasks'),
-      fbGet('kpi/accounts'),
-      fbGet('kpi/notifs'),
-      fbGet('kpi/yearRange'),
-    ]);
-
-    if (fbTasks !== null) {
-      window.TASKS = fbTasks;
-      localStorage.setItem('tsc_tasks', JSON.stringify(fbTasks));
-    }
-    if (fbAccounts !== null) {
-      window.ACCOUNTS = fbAccounts;
-      localStorage.setItem('tsc_accounts', JSON.stringify(fbAccounts));
-    }
-    if (fbNotifs !== null) {
-      window.NOTIFS = fbNotifs;
-      localStorage.setItem('tsc_notifs', JSON.stringify(fbNotifs));
-    }
-    if (fbYearRange !== null) {
-      window.YEAR_RANGE = fbYearRange;
-      localStorage.setItem('tsc_year_range', JSON.stringify(fbYearRange));
-    }
-
-    // Signal app that Firebase data is loaded
-    window.dispatchEvent(new Event('firebase-loaded'));
-  }
-
-  loadFromFirebase();
+  // Load all data from Firestore, then start the app
+  window._fbLoad = function(callback) {
+    Promise.all([
+      _db.collection('kpi').doc('tasks').get(),
+      _db.collection('kpi').doc('accounts').get(),
+      _db.collection('kpi').doc('notifs').get(),
+      _db.collection('kpi').doc('yearRange').get()
+    ]).then(function(snaps) {
+      var result = {};
+      var keys = ['tasks','accounts','notifs','yearRange'];
+      snaps.forEach(function(snap, i) {
+        result[keys[i]] = snap.exists ? snap.data().value : null;
+      });
+      callback(null, result);
+    }).catch(function(err) {
+      console.warn('Firebase load error:', err.message);
+      callback(err, {});
+    });
+  };
+  } // end else (firebase defined)
 </script>
 <style>
 :root{
@@ -963,29 +942,6 @@ function getAssignees(t){
 function taskBelongsToUser(t){
   if(isAdmin())return true;
   return getAssignees(t).includes(CU.init);
-}
-
-// Seed demo data
-if(!TASKS.length){
-  const fmt=d=>d.toISOString().split('T')[0];
-  const past=(n,m=0)=>{const d=new Date();d.setMonth(d.getMonth()-m);d.setDate(d.getDate()-n);return fmt(d);};
-  const fut=n=>{const d=new Date();d.setDate(d.getDate()+n);return fmt(d);};
-  const cr=(n,m=0)=>{const d=new Date();d.setMonth(d.getMonth()-m);d.setDate(d.getDate()-n-2);return fmt(d);};
-  TASKS=[
-    {id:uid(),name:'Prepare Project Proposal for ABC Corp',category:'Project Proposal',engineer:'BMP',assignees:['BMP'],priority:'high',status:'completed',due:past(5),client:'ABC Corp',desc:'',notes:'',created:cr(10)},
-    {id:uid(),name:'Follow up Client Inquiry – XYZ Ltd',category:'Client Inquiry',engineer:'ARG',assignees:['ARG'],priority:'medium',status:'completed',due:past(3),client:'XYZ Ltd',desc:'',notes:'',created:cr(8)},
-    {id:uid(),name:'Site Visit – Laguna Plant Inspection',category:'Site Visit',engineer:'BMP',assignees:['BMP','ARG'],priority:'high',status:'completed',due:past(2),client:'Laguna Plant',desc:'',notes:'',created:cr(7)},
-    {id:uid(),name:'Technical Report Q2',category:'Technical Report',engineer:'JDC',assignees:['JDC'],priority:'medium',status:'in_progress',due:fut(3),client:'Internal',desc:'',notes:'',created:cr(4)},
-    {id:uid(),name:'After Sales – Equipment Checkup Manila',category:'After Sales Service',engineer:'ARG',assignees:['ARG'],priority:'low',status:'completed',due:past(1),client:'Manila HQ',desc:'',notes:'',created:cr(6)},
-    {id:uid(),name:'PO Checking Batch 14',category:'PO Checking',engineer:'BMP',assignees:['BMP'],priority:'medium',status:'completed',due:past(4),client:'Procurement',desc:'',notes:'',created:cr(9)},
-    {id:uid(),name:'CAD Drawing – Water Treatment System',category:'CAD Drawing',engineer:'JDC',assignees:['JDC'],priority:'high',status:'not_started',due:fut(7),client:'Water Dept',desc:'',notes:'',created:cr(1)},
-    {id:uid(),name:'Miscellaneous Admin Documentation',category:'Others',engineer:'ARG',assignees:['ARG'],priority:'low',status:'completed',due:past(2),client:'HQ',desc:'',notes:'',created:cr(5)},
-    {id:uid(),name:'OVERDUE: Submit Safety Compliance Report',category:'Technical Report',engineer:'BMP',assignees:['BMP','JDC'],priority:'critical',status:'in_progress',due:past(3),client:'Safety Dept',desc:'',notes:'',created:cr(15)},
-    {id:uid(),name:'Client Presentation – Davao Project',category:'Project Proposal',engineer:'ARG',assignees:['ARG'],priority:'high',status:'in_progress',due:fut(5),client:'Davao Office',desc:'',notes:'',created:cr(3)},
-    {id:uid(),name:'Site Survey – Cebu Branch',category:'Site Visit',engineer:'JDC',assignees:['JDC'],priority:'medium',status:'completed',due:past(5,1),client:'Cebu Branch',desc:'',notes:'',created:cr(12,1)},
-    {id:uid(),name:'Proposal for Pump System Upgrade',category:'Project Proposal',engineer:'BMP',assignees:['BMP'],priority:'high',status:'completed',due:past(8,1),client:'Engineering Dept',desc:'',notes:'',created:cr(15,1)},
-  ];
-  saveTasks();
 }
 
 // ─── NOTIFICATIONS ────────────────────────────
@@ -2088,41 +2044,83 @@ function importJSON(e){
     e.target.value='';
   };reader.readAsText(file);
 }
-// ─── FIREBASE INIT SYNC ───────────────────────
+// ─── FIREBASE STARTUP LOADER ─────────────────
 (function(){
-  const bar=document.getElementById('fb-bar');
-  // animate bar while loading
-  let prog=0;
-  const anim=setInterval(()=>{prog=Math.min(prog+3,85);if(bar)bar.style.width=prog+'%';},80);
+  var bar=document.getElementById('fb-bar');
+  var overlay=document.getElementById('fb-loading');
+  var prog=0;
+  var anim=setInterval(function(){
+    prog=Math.min(prog+4,85);
+    if(bar)bar.style.width=prog+'%';
+  },60);
 
-  function onFirebaseLoaded(){
+  function applyAndStart(fbData){
     clearInterval(anim);
     if(bar)bar.style.width='100%';
-    // Override in-memory arrays with whatever Firebase returned (already synced to localStorage)
-    const fbTasks=localStorage.getItem(SK.tasks);
-    const fbAccounts=localStorage.getItem(SK.accounts);
-    const fbNotifs=localStorage.getItem(SK.notifs);
-    const fbYearRange=localStorage.getItem(SK.yearRange);
-    if(fbTasks)TASKS=JSON.parse(fbTasks);
-    if(fbAccounts)ACCOUNTS=JSON.parse(fbAccounts)||DEFAULT_ACCOUNTS;
-    if(fbNotifs)NOTIFS=JSON.parse(fbNotifs);
-    if(fbYearRange)YEAR_RANGE=JSON.parse(fbYearRange)||DEFAULT_YEAR_RANGE;
-    setTimeout(()=>{
-      const overlay=document.getElementById('fb-loading');
-      if(overlay)overlay.style.display='none';
+
+    // Apply Firebase data directly into the app's live variables
+    if(fbData.tasks && Array.isArray(fbData.tasks) && fbData.tasks.length > 0){
+      TASKS = fbData.tasks;
+      localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
+    }
+    if(fbData.accounts && Array.isArray(fbData.accounts) && fbData.accounts.length > 0){
+      ACCOUNTS = fbData.accounts;
+      localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
+    }
+    if(fbData.notifs && Array.isArray(fbData.notifs)){
+      NOTIFS = fbData.notifs;
+      localStorage.setItem(SK.notifs, JSON.stringify(NOTIFS));
+    }
+    if(fbData.yearRange && typeof fbData.yearRange === 'object'){
+      YEAR_RANGE = fbData.yearRange;
+      localStorage.setItem(SK.yearRange, JSON.stringify(YEAR_RANGE));
+    }
+
+    // Seed demo tasks only if BOTH Firebase and localStorage are empty
+    if(!TASKS.length){
+      var fmt=function(d){return d.toISOString().split('T')[0];};
+      var past=function(n,m){m=m||0;var d=new Date();d.setMonth(d.getMonth()-m);d.setDate(d.getDate()-n);return fmt(d);};
+      var fut=function(n){var d=new Date();d.setDate(d.getDate()+n);return fmt(d);};
+      var cr=function(n,m){m=m||0;var d=new Date();d.setMonth(d.getMonth()-m);d.setDate(d.getDate()-n-2);return fmt(d);};
+      TASKS=[
+        {id:uid(),name:'Prepare Project Proposal for ABC Corp',category:'Project Proposal',engineer:'BMP',assignees:['BMP'],priority:'high',status:'completed',due:past(5),client:'ABC Corp',desc:'',notes:'',created:cr(10)},
+        {id:uid(),name:'Follow up Client Inquiry – XYZ Ltd',category:'Client Inquiry',engineer:'ARG',assignees:['ARG'],priority:'medium',status:'completed',due:past(3),client:'XYZ Ltd',desc:'',notes:'',created:cr(8)},
+        {id:uid(),name:'Site Visit – Laguna Plant Inspection',category:'Site Visit',engineer:'BMP',assignees:['BMP','ARG'],priority:'high',status:'completed',due:past(2),client:'Laguna Plant',desc:'',notes:'',created:cr(7)},
+        {id:uid(),name:'Technical Report Q2',category:'Technical Report',engineer:'JDC',assignees:['JDC'],priority:'medium',status:'in_progress',due:fut(3),client:'Internal',desc:'',notes:'',created:cr(4)},
+        {id:uid(),name:'After Sales – Equipment Checkup Manila',category:'After Sales Service',engineer:'ARG',assignees:['ARG'],priority:'low',status:'completed',due:past(1),client:'Manila HQ',desc:'',notes:'',created:cr(6)},
+        {id:uid(),name:'PO Checking Batch 14',category:'PO Checking',engineer:'BMP',assignees:['BMP'],priority:'medium',status:'completed',due:past(4),client:'Procurement',desc:'',notes:'',created:cr(9)},
+        {id:uid(),name:'CAD Drawing – Water Treatment System',category:'CAD Drawing',engineer:'JDC',assignees:['JDC'],priority:'high',status:'not_started',due:fut(7),client:'Water Dept',desc:'',notes:'',created:cr(1)},
+        {id:uid(),name:'Miscellaneous Admin Documentation',category:'Others',engineer:'ARG',assignees:['ARG'],priority:'low',status:'completed',due:past(2),client:'HQ',desc:'',notes:'',created:cr(5)},
+        {id:uid(),name:'OVERDUE: Submit Safety Compliance Report',category:'Technical Report',engineer:'BMP',assignees:['BMP','JDC'],priority:'critical',status:'in_progress',due:past(3),client:'Safety Dept',desc:'',notes:'',created:cr(15)},
+        {id:uid(),name:'Client Presentation – Davao Project',category:'Project Proposal',engineer:'ARG',assignees:['ARG'],priority:'high',status:'in_progress',due:fut(5),client:'Davao Office',desc:'',notes:'',created:cr(3)},
+        {id:uid(),name:'Site Survey – Cebu Branch',category:'Site Visit',engineer:'JDC',assignees:['JDC'],priority:'medium',status:'completed',due:past(5,1),client:'Cebu Branch',desc:'',notes:'',created:cr(12,1)},
+        {id:uid(),name:'Proposal for Pump System Upgrade',category:'Project Proposal',engineer:'BMP',assignees:['BMP'],priority:'high',status:'completed',due:past(8,1),client:'Engineering Dept',desc:'',notes:'',created:cr(15,1)},
+      ];
+      // Save seed data to both localStorage and Firebase
+      localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
+      if(window._fbSet) window._fbSet('kpi/tasks', TASKS);
+    }
+
+    // Always ensure accounts exist
+    if(!ACCOUNTS || !ACCOUNTS.length){
+      ACCOUNTS = DEFAULT_ACCOUNTS.slice();
+      localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
+      if(window._fbSet) window._fbSet('kpi/accounts', ACCOUNTS);
+    }
+
+    // Dismiss loading overlay — login screen will show underneath
+    setTimeout(function(){
+      if(overlay) overlay.style.display='none';
     },300);
   }
 
-  if(window._fbReady){
-    onFirebaseLoaded();
+  // Try Firebase first, fall back to localStorage gracefully
+  if(typeof window._fbLoad === 'function'){
+    window._fbLoad(function(err, fbData){
+      applyAndStart(err ? {} : fbData);
+    });
   } else {
-    // Wait for firebase-loaded event (fired by module after Firestore fetch)
-    window.addEventListener('firebase-loaded',onFirebaseLoaded,{once:true});
-    // Safety timeout: if Firebase takes > 6s, just proceed anyway
-    setTimeout(()=>{
-      window.removeEventListener('firebase-loaded',onFirebaseLoaded);
-      onFirebaseLoaded();
-    },6000);
+    applyAndStart({});
   }
 })();
 </script>
