@@ -390,6 +390,121 @@ tbody tr:last-child td{border-bottom:none;}
 @media (max-width:780px){
   .kpi-grid{grid-template-columns:1fr;}
 }
+
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width:768px){
+  html{font-size:13px;}
+
+  /* Header */
+  .hdr{padding:0 12px;gap:8px;height:52px;}
+  .hdr-corp{font-size:12px;}
+  .hdr-dept{display:none;}
+  .hdr-div{display:none;}
+  .hdr-date{display:none;}
+  .u-name{display:none;}
+  .logout{padding:5px 10px;font-size:11px;}
+
+  /* Mobile hamburger button in header */
+  .mob-menu-btn{display:flex!important;}
+
+  /* Sidebar becomes a slide-over on mobile */
+  .sidebar{
+    position:fixed;left:-260px;top:52px;bottom:0;z-index:500;
+    width:240px!important;height:calc(100vh - 52px);
+    background:var(--card);border-right:1px solid var(--border);
+    box-shadow:var(--sh3);transition:left .25s cubic-bezier(.4,0,.2,1);
+    overflow-y:auto;align-items:stretch!important;padding:10px 8px;
+  }
+  .sidebar.mob-open{left:0;}
+  .sidebar .sb-tog{display:none;}
+  .sidebar .sbi{width:100%!important;padding:10px 12px!important;}
+  .sidebar .sbi-lb{opacity:1!important;}
+  .sidebar .sbi-bd{opacity:1!important;}
+  .sidebar .sb-sec{opacity:1!important;height:auto!important;}
+
+  /* Overlay behind sidebar */
+  .mob-overlay{display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.4);z-index:499;}
+  .mob-overlay.show{display:block;}
+
+  /* Shell */
+  .shell{flex-direction:column;height:calc(100vh - 52px);}
+
+  /* Content */
+  .content{padding:12px;overflow-y:auto;}
+
+  /* KPI grid */
+  .kpi-grid{grid-template-columns:repeat(2,1fr);gap:10px;}
+
+  /* Dashboard grid rows */
+  .dr1,.dr2,.dr3{grid-template-columns:1fr!important;gap:12px;}
+
+  /* Page header */
+  .ph{flex-direction:column;gap:8px;margin-bottom:14px;}
+  .ph-title{font-size:18px;}
+
+  /* Filter bar */
+  .fbar{padding:10px 12px;gap:6px;}
+  .fg{flex-wrap:wrap;}
+  .fsel{font-size:11.5px;padding:5px 8px;}
+
+  /* Dash filters */
+  .dash-filters{flex-wrap:wrap;gap:6px;}
+  .df-sel{font-size:11.5px;padding:6px 9px;}
+
+  /* Table - make it scroll horizontally */
+  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  table{min-width:700px;font-size:12px;}
+
+  /* Task cards */
+  .my-task-card{padding:12px 14px;gap:10px;}
+  .my-task-name{font-size:13px;}
+
+  /* Modal */
+  .modal{width:100%!important;max-width:100%!important;border-radius:16px 16px 0 0!important;position:fixed!important;bottom:0!important;top:auto!important;max-height:92vh!important;padding:20px 16px!important;}
+  .mo{align-items:flex-end!important;}
+
+  /* Engineer/account grids */
+  .eng-grid,.acc-grid{grid-template-columns:1fr 1fr;gap:10px;}
+
+  /* Cards */
+  .card{padding:14px;}
+
+  /* Reports grid */
+  #rep-kpis{grid-template-columns:1fr 1fr!important;}
+
+  /* Notif panel */
+  .notif-panel{width:280px;right:-8px;}
+
+  /* KPI cards */
+  .kc{padding:14px;}
+  .kc-val{font-size:26px;}
+
+  /* Buttons row */
+  .export-row{gap:6px;}
+  .btn{padding:7px 14px;font-size:12px;}
+  .btn-sm{padding:4px 9px;font-size:11px;}
+
+  /* Add task form */
+  .fg2{grid-template-columns:1fr!important;}
+  .ff{grid-column:1!important;}
+}
+
+@media (max-width:420px){
+  .kpi-grid{grid-template-columns:1fr;}
+  .eng-grid,.acc-grid{grid-template-columns:1fr;}
+  #rep-kpis{grid-template-columns:1fr!important;}
+  .hdr-mark{width:28px;height:28px;font-size:11px;}
+}
+
+/* Mobile menu button - hidden on desktop */
+.mob-menu-btn{
+  display:none;
+  width:34px;height:34px;border-radius:9px;border:1px solid var(--border);
+  background:var(--bg);cursor:pointer;align-items:center;justify-content:center;
+  font-size:18px;transition:all .15s;flex-shrink:0;
+}
+.mob-menu-btn:hover{background:var(--pr-tint);border-color:var(--pr);}
+
 </style>
 </head>
 <body>
@@ -420,6 +535,7 @@ tbody tr:last-child td{border-bottom:none;}
 <!-- ══════════ APP ══════════ -->
 <div id="app">
 <header class="hdr">
+  <button class="mob-menu-btn" onclick="toggleMobileSb()" id="mob-menu-btn">☰</button>
   <div class="hdr-logo">
     <div class="hdr-mark">TC</div>
     <div><div class="hdr-corp">Technosam Corporation</div><div class="hdr-dept">Technical Department</div></div>
@@ -446,6 +562,7 @@ tbody tr:last-child td{border-bottom:none;}
 </header>
 
 <div class="shell">
+<div class="mob-overlay" id="mob-overlay" onclick="closeMobileSb()"></div>
 <aside class="sidebar" id="sidebar">
   <button class="sb-tog" onclick="toggleSb()" title="Toggle">☰</button>
   <div class="sb-sec">Main</div>
@@ -1027,6 +1144,15 @@ function initApp(){
 // ─── SIDEBAR ──────────────────────────────────
 let sbOpen=false;
 function toggleSb(){sbOpen=!sbOpen;$('sidebar').classList.toggle('open',sbOpen);}
+function toggleMobileSb(){
+  const sb=$('sidebar'),ov=$('mob-overlay');
+  sb.classList.toggle('mob-open');
+  ov.classList.toggle('show',sb.classList.contains('mob-open'));
+}
+function closeMobileSb(){
+  $('sidebar').classList.remove('mob-open');
+  $('mob-overlay').classList.remove('show');
+}
 function updateBadges(){
   set('sb-ov',TASKS.filter(isOv).length);
 }
@@ -1039,6 +1165,7 @@ function sv(v){
   document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
   $('view-'+v)?.classList.add('active');
   VIEWS.forEach(n=>{const b=$('sbi-'+n);if(b)b.classList.toggle('active',n===v);});
+  if(window.innerWidth<=768)closeMobileSb();
   if(v==='dashboard')renderDash();
   if(v==='tasks'){
     _qf='';
@@ -1059,11 +1186,21 @@ function qf(type){
   var vEl=document.getElementById('view-tasks');if(vEl)vEl.classList.add('active');
   ['dashboard','tasks','add','reports','team','accounts'].forEach(function(n){var b=document.getElementById('sbi-'+n);if(b)b.classList.toggle('active',n==='tasks');});
   var at=document.getElementById('admin-tasks-view'),mt=document.getElementById('member-tasks-view'),ab=document.getElementById('tasks-add-btn');
-  if(at)at.style.display='';if(mt)mt.style.display='none';
-  if(ab)ab.style.display=isAdmin()?'':'none';
-  if(type==='overdue'){var yr=document.getElementById('tyr'),mo=document.getElementById('tmo');if(yr)yr.value='';if(mo)mo.value='';}
-  else{setTaskDefaultPeriod();}
-  if(isAdmin())renderTbl();else renderMyTasks();
+  if(isAdmin()){
+    if(at)at.style.display='';
+    if(mt)mt.style.display='none';
+    if(ab)ab.style.display='';
+    if(type==='overdue'){var yr=document.getElementById('tyr'),mo=document.getElementById('tmo');if(yr)yr.value='';if(mo)mo.value='';}
+    else{setTaskDefaultPeriod();}
+    renderTbl();
+  } else {
+    if(at)at.style.display='none';
+    if(mt)mt.style.display='';
+    if(ab)ab.style.display='none';
+    renderMyTasks();
+  }
+  // Close mobile sidebar after selecting a quick filter
+  if(window.innerWidth<=768){closeMobileSb();}
 }
 
 // ─── DROPDOWNS ────────────────────────────────
