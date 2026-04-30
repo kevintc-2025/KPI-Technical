@@ -7,123 +7,186 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<!-- Firebase Compat SDK via cdnjs (confirmed available) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.13.0/firebase-app-compat.min.js" onerror="console.warn('Firebase app CDN failed')"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.13.0/firebase-firestore-compat.min.js" onerror="console.warn('Firebase firestore CDN failed')"></script>
+<!-- Firebase Compat SDK (v10) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.13.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.13.0/firebase-firestore-compat.min.js"></script>
 <script>
-  // Initialize Firebase — guard in case CDN failed to load
-  if(typeof firebase === 'undefined'){
-    console.warn('Firebase SDK not loaded. Running on localStorage only.');
-    window._fbSet = function(){};
-    window._fbLoad = function(cb){ cb(null, {}); };
-  } else {
-  const _fbApp = firebase.initializeApp({
-    apiKey: "AIzaSyBXULUKieJPALYC6K8hEUAvhQwyt8ReVuw",
-    authDomain: "technical-kpi.firebaseapp.com",
-    projectId: "technical-kpi",
-    storageBucket: "technical-kpi.firebasestorage.app",
+/* =============================================================
+   FIREBASE MODULE
+   Wraps all Firestore operations. The rest of the app only
+   calls:  _fbSet(docPath, value)
+           _fbLoad(callback)
+           _fbStartRealtime()
+           _fbStopRealtime()
+   If Firebase is unavailable, no-op stubs keep the app working
+   on localStorage alone.
+============================================================= */
+(function initFirebase() {
+  var FB_CONFIG = {
+    apiKey:            "AIzaSyBXULUKieJPALYC6K8hEUAvhQwyt8ReVuw",
+    authDomain:        "technical-kpi.firebaseapp.com",
+    projectId:         "technical-kpi",
+    storageBucket:     "technical-kpi.firebasestorage.app",
     messagingSenderId: "789356477707",
-    appId: "1:789356477707:web:a60787b881637d6119360e"
-  });
-  const _db = firebase.firestore();
+    appId:             "1:789356477707:web:a60787b881637d6119360e"
+  };
 
-  // Initial one-time load (used at startup before listeners attach)
-  window._fbLoad = function(callback) {
-    var retries = 0;
-    var maxRetries = 3;
+  // Guard: SDK may fail to load on slow/offline connections
+  if (typeof firebase === 'undefined') {
+    console.warn('[KPI] Firebase SDK not loaded — running on localStorage only.');
+    return;
+  }
+
+  var app = firebase.initializeApp(FB_CONFIG);
+  var db  = firebase.firestore();
+
+  // ── Write: save value to kpi/{doc} ──────────────────────────
+  // Writes are fire-and-forget; localStorage is always updated first
+  // so the UI never waits for the network.
+  window._fbSet = function (docPath, value) {
+    var parts = docPath.split('/');
+    db.collection(parts[0]).doc(parts[1])
+      .set({ value: value })
+      .catch(function (e) { console.warn('[KPI] Firebase write failed:', e.message); });
+  };
+
+  // ── Load: one-time bulk read on login ───────────────────────
+  // Fetches all four documents in a single round-trip.
+  // Retries up to 3 times on failure before falling back to
+  // whatever is cached in localStorage.
+  window._fbLoad = function (callback) {
+    var DOCS = ['tasks', 'accounts', 'notifs', 'yearRange'];
+    var attempts = 0;
+    var MAX_ATTEMPTS = 3;
+
     function attempt() {
-      Promise.all([
-        _db.collection('kpi').doc('tasks').get(),
-        _db.collection('kpi').doc('accounts').get(),
-        _db.collection('kpi').doc('notifs').get(),
-        _db.collection('kpi').doc('yearRange').get()
-      ]).then(function(snaps) {
+      Promise.all(DOCS.map(function (d) {
+        return db.collection('kpi').doc(d).get();
+      }))
+      .then(function (snaps) {
         var result = {};
-        var keys = ['tasks','accounts','notifs','yearRange'];
-        snaps.forEach(function(snap, i) {
-          result[keys[i]] = snap.exists ? snap.data().value : null;
+        snaps.forEach(function (snap, i) {
+          result[DOCS[i]] = snap.exists ? snap.data().value : null;
         });
         callback(null, result);
-      }).catch(function(err) {
-        console.warn('Firebase attempt ' + (retries+1) + ' failed: ' + err.message);
-        if(retries < maxRetries) { retries++; setTimeout(attempt, 2000 * retries); }
-        else { console.warn('Firebase load error: ' + err.message); callback(err, {}); }
+      })
+      .catch(function (err) {
+        attempts++;
+        console.warn('[KPI] Firebase load attempt ' + attempts + ' failed:', err.message);
+        if (attempts < MAX_ATTEMPTS) {
+          setTimeout(attempt, attempts * 2000); // exponential back-off
+        } else {
+          console.warn('[KPI] Falling back to localStorage.');
+          callback(err, {});
+        }
       });
     }
     attempt();
   };
 
-  // ── Real-time listeners ──────────────────────────────────────────────
-  var _rtListeners = [];
-  var _fbWriting = false; // set true briefly after our own writes to skip the echo snapshot
+  // ── Real-time listeners ─────────────────────────────────────
+  // Keeps every logged-in browser in sync automatically.
+  // _fbWriting prevents the app from reacting to its own writes
+  // (echo suppression) to avoid unnecessary re-renders.
+  var _unsubscribers = [];
+  var _fbWriting = false;
+  var ECHO_DELAY_MS = 800; // how long to suppress echoes after a write
 
-  window._fbSet = function(docPath, value) {
-    const parts = docPath.split('/');
+  // Override _fbSet to set the echo-suppression flag
+  var _fbSetOrig = window._fbSet;
+  window._fbSet = function (docPath, value) {
     _fbWriting = true;
-    _db.collection(parts[0]).doc(parts[1]).set({ value: value })
-      .then(function(){ setTimeout(function(){ _fbWriting = false; }, 800); })
-      .catch(function(e){ _fbWriting = false; console.warn('Firebase write error:', e.message); });
+    _fbSetOrig(docPath, value);
+    setTimeout(function () { _fbWriting = false; }, ECHO_DELAY_MS);
   };
 
-  window._fbStartRealtime = function() {
-    _rtListeners.forEach(function(u){ try{ u(); }catch(e){} });
-    _rtListeners = [];
-
-    function isReady(){ return typeof CU !== 'undefined' && CU !== null; }
-
-    // ── tasks ──
-    _rtListeners.push(
-      _db.collection('kpi').doc('tasks').onSnapshot(function(snap) {
-        if(!snap.exists || !isReady() || _fbWriting) return;
-        var fresh = snap.data().value;
-        if(!Array.isArray(fresh)) return;
-        TASKS = fresh;
-        localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
-        refreshAllViews();
-      }, function(err){ console.warn('RT tasks error:', err.message); })
+  function listen(doc, onData) {
+    return db.collection('kpi').doc(doc).onSnapshot(
+      function (snap) {
+        if (!snap.exists || _fbWriting) return;
+        var data = snap.data().value;
+        onData(data);
+      },
+      function (err) { console.warn('[KPI] Realtime ' + doc + ' error:', err.message); }
     );
+  }
 
-    // ── notifs ──
-    _rtListeners.push(
-      _db.collection('kpi').doc('notifs').onSnapshot(function(snap) {
-        if(!snap.exists || !isReady() || _fbWriting) return;
-        var fresh = snap.data().value;
-        if(!Array.isArray(fresh)) return;
-        NOTIFS = fresh;
-        localStorage.setItem(SK.notifs, JSON.stringify(NOTIFS));
-        updateNotifBadge();
-        var panel = document.getElementById('notif-panel');
-        if(panel && panel.classList.contains('open')) renderNotifPanel();
-      }, function(err){ console.warn('RT notifs error:', err.message); })
-    );
+  window._fbStartRealtime = function () {
+    // Stop any existing listeners first (e.g. after re-login)
+    window._fbStopRealtime();
 
-    // ── accounts ──
-    _rtListeners.push(
-      _db.collection('kpi').doc('accounts').onSnapshot(function(snap) {
-        if(!snap.exists || !isReady() || _fbWriting) return;
-        var fresh = snap.data().value;
-        if(!Array.isArray(fresh)) return;
-        ACCOUNTS = fresh;
-        localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
-        if(CU){ var updated=ACCOUNTS.find(function(a){ return a.id===CU.id; }); if(updated) CU=updated; }
-        if(typeof renderAccounts==='function' && typeof isAdmin==='function' && isAdmin()) renderAccounts();
-      }, function(err){ console.warn('RT accounts error:', err.message); })
-    );
+    _unsubscribers.push(listen('tasks', function (data) {
+      if (!Array.isArray(data) || !window.CU) return;
+      TASKS = data;
+      localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
+      refreshAllViews();
+    }));
+
+    _unsubscribers.push(listen('notifs', function (data) {
+      if (!Array.isArray(data) || !window.CU) return;
+      NOTIFS = data;
+      localStorage.setItem(SK.notifs, JSON.stringify(NOTIFS));
+      updateNotifBadge();
+      var panel = document.getElementById('notif-panel');
+      if (panel && panel.classList.contains('open')) renderNotifPanel();
+    }));
+
+    _unsubscribers.push(listen('accounts', function (data) {
+      if (!Array.isArray(data) || !window.CU) return;
+      ACCOUNTS = data;
+      localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
+      // Keep current-user object in sync (e.g. if admin changed their own profile)
+      var updated = ACCOUNTS.find(function (a) { return a.id === CU.id; });
+      if (updated) CU = updated;
+      if (typeof renderAccounts === 'function' && isAdmin()) renderAccounts();
+    }));
   };
 
-  window._fbStopRealtime = function() {
-    _rtListeners.forEach(function(u){ try{ u(); }catch(e){} });
-    _rtListeners = [];
+  window._fbStopRealtime = function () {
+    _unsubscribers.forEach(function (unsub) { try { unsub(); } catch (e) {} });
+    _unsubscribers = [];
   };
 
-  } // end else (firebase defined)
+})(); // end initFirebase
 
-  // Fallback stubs when Firebase is unavailable
-  if(typeof window._fbSet          === 'undefined') window._fbSet          = function(){};
-  if(typeof window._fbStartRealtime === 'undefined') window._fbStartRealtime = function(){};
-  if(typeof window._fbStopRealtime  === 'undefined') window._fbStopRealtime  = function(){};
+// No-op stubs — used when Firebase SDK failed to load
+if (typeof window._fbSet           === 'undefined') window._fbSet           = function () {};
+if (typeof window._fbLoad          === 'undefined') window._fbLoad          = function (cb) { cb(null, {}); };
+if (typeof window._fbStartRealtime === 'undefined') window._fbStartRealtime = function () {};
+if (typeof window._fbStopRealtime  === 'undefined') window._fbStopRealtime  = function () {};
 </script>
 <style>
+/*
+ * KPI TRACKER — STYLESHEET
+ * ─────────────────────────
+ * Sections (Ctrl+F to jump):
+ *   VARIABLES        CSS custom properties (colors, shadows, radii)
+ *   LOGIN            Login screen styles
+ *   APP / HEADER     Top bar, user pill, logout
+ *   NOTIF BELL       Notification button + panel
+ *   SHELL / SIDEBAR  Left sidebar navigation
+ *   CONTENT          Main scrollable area
+ *   PAGE HEADER      Title + subtitle row
+ *   CARD             White card container
+ *   KPI GRID         4-column stat cards on dashboard
+ *   DASHBOARD GRIDS  .dr1 .dr2 .dr3 row layouts
+ *   FILTERS          Filter bar, selects, search input
+ *   BADGES           Priority/status color chips
+ *   TABLE            Task list table
+ *   BUTTONS          .btn variants
+ *   FORM             Input, select, textarea, grid
+ *   MODAL            Overlay + modal card
+ *   DONUT / RING     SVG charts
+ *   PROGRESS         Overall progress layout
+ *   GAUGE            Horizontal bar gauges
+ *   TIMELINE         Activity feed dots
+ *   ENGINEER CARDS   Team member cards
+ *   ACCOUNT MGMT     Account list rows
+ *   MISC             My-task cards, multi-check, export row, etc.
+ *   MOBILE           @media (max-width: 768px) overrides
+ */
+
+/* ── VARIABLES ── */
 :root{
   --bg:#f0f2f8;--bg2:#e4e8f2;--card:#ffffff;--border:#e0e5f0;--border2:#cdd5e8;
   --pr:#8b1a1a;--pr-dk:#6b0f0f;--pr-lt:#b52a2a;--pr-tint:#fdf2f2;--pr-glow:rgba(139,26,26,.18);
@@ -470,7 +533,9 @@ tbody tr:last-child td{border-bottom:none;}
 }
 
 /* ══════════════════════════════════════════
-   MOBILE RESPONSIVE — full fluid layout
+   MOBILE  @media (max-width: 768px)
+   All overrides for phones and small tablets.
+   These always come last so they win specificity.
 ══════════════════════════════════════════ */
 
 /* Mobile menu button — hidden on desktop */
@@ -1156,268 +1221,464 @@ tbody tr:last-child td{border-bottom:none;}
 </div>
 
 <script>
-// ─── EMAILJS INIT ──────────────────────────────
-try{(function(){if(typeof emailjs!=='undefined')emailjs.init({publicKey:'AtidZBTpgsj92oaGD'});})();}catch(e){}
-const EJ_SVC='service_0j69hzb', EJ_TPL='template_w5hma9s';
+/* =============================================================
+   EMAIL MODULE (EmailJS)
+   Sends assignment notifications to engineers via email.
+   Configure your EmailJS service/template IDs below.
+============================================================= */
+try { if (typeof emailjs !== 'undefined') emailjs.init({ publicKey: 'AtidZBTpgsj92oaGD' }); } catch (e) {}
 
-function sendTaskEmail(toEmail, toName, taskName, dueDate, notes){
-  if(!toEmail)return;
-  if(typeof emailjs==='undefined')return;
+var EJ_SVC = 'service_0j69hzb';  // EmailJS service ID
+var EJ_TPL = 'template_w5hma9s'; // EmailJS template ID
+
+function sendTaskEmail(toEmail, toName, taskName, dueDate, notes) {
+  if (!toEmail || typeof emailjs === 'undefined') return;
   emailjs.send(EJ_SVC, EJ_TPL, {
-    email:      toEmail,
-    to_name:    toName||toEmail,
-    task_name:  taskName,
-    due_date:   dueDate||'—',
-    notes:      notes||'No additional notes.',
-    from_name:  'Technosam KPI Tracker'
-  }).catch(function(err){ console.warn('EmailJS error:', err); });
+    email:     toEmail,
+    to_name:   toName || toEmail,
+    task_name: taskName,
+    due_date:  dueDate  || '—',
+    notes:     notes    || 'No additional notes.',
+    from_name: 'Technosam KPI Tracker'
+  }).catch(function (err) { console.warn('[KPI] EmailJS error:', err); });
 }
 
-// ─── STORAGE KEYS ─────────────────────────────
-const SK={tasks:'tsc_tasks',accounts:'tsc_accounts',engs:'tsc_engs',notifs:'tsc_notifs',yearRange:'tsc_year_range'};
+/* =============================================================
+   STORAGE KEYS
+   All localStorage keys in one place — easy to rename or migrate.
+============================================================= */
+var SK = {
+  tasks:     'tsc_tasks',
+  accounts:  'tsc_accounts',
+  notifs:    'tsc_notifs',
+  yearRange: 'tsc_year_range'
+};
 
-// ─── DEFAULT ACCOUNTS ─────────────────────────
-const DEFAULT_ACCOUNTS=[
-  {id:'acc-admin',u:'admin',p:'admin123',role:'admin',display:'Administrator',init:'AD',color:'#8b1a1a',email:'admin@technosam.com',fullName:'Administrator',position:'System Admin'},
-  {id:'acc-bmp',u:'bmp',p:'bmp123',role:'member',display:'BMP',init:'BMP',color:'#1d4ed8',email:'bmp@technosam.com',fullName:'BMP',position:'Lead Engineer'},
-  {id:'acc-arg',u:'arg',p:'arg123',role:'member',display:'ARG',init:'ARG',color:'#16a34a',email:'arg@technosam.com',fullName:'ARG',position:'Engineer'},
-  {id:'acc-jdc',u:'jdc',p:'jdc123',role:'member',display:'JDC',init:'JDC',color:'#7c3aed',email:'jdc@technosam.com',fullName:'JDC',position:'Engineer'},
+/* =============================================================
+   DEFAULT ACCOUNTS
+   Used the very first time the app runs (empty localStorage).
+   Passwords here are plain-text seeds — they get hashed on first login.
+   To add a new default account, copy one of the objects below.
+============================================================= */
+var DEFAULT_ACCOUNTS = [
+  { id:'acc-admin', u:'admin', p:'admin123', role:'admin',  display:'Administrator', init:'AD',  color:'#8b1a1a', email:'admin@technosam.com', fullName:'Administrator', position:'System Admin'   },
+  { id:'acc-bmp',   u:'bmp',   p:'bmp123',   role:'member', display:'BMP',           init:'BMP', color:'#1d4ed8', email:'bmp@technosam.com',   fullName:'BMP',           position:'Lead Engineer' },
+  { id:'acc-arg',   u:'arg',   p:'arg123',   role:'member', display:'ARG',           init:'ARG', color:'#16a34a', email:'arg@technosam.com',   fullName:'ARG',           position:'Engineer'      },
+  { id:'acc-jdc',   u:'jdc',   p:'jdc123',   role:'member', display:'JDC',           init:'JDC', color:'#7c3aed', email:'jdc@technosam.com',   fullName:'JDC',           position:'Engineer'      },
 ];
 
-let ACCOUNTS=JSON.parse(localStorage.getItem(SK.accounts)||'null')||DEFAULT_ACCOUNTS;
-let CU=null;
-const isAdmin=()=>CU?.role==='admin';
+// In-memory state — loaded from localStorage on page start
+let ACCOUNTS  = JSON.parse(localStorage.getItem(SK.accounts) || 'null') || DEFAULT_ACCOUNTS;
+let TASKS     = JSON.parse(localStorage.getItem(SK.tasks)    || '[]');
+let NOTIFS    = JSON.parse(localStorage.getItem(SK.notifs)   || '[]');
+let CU        = null; // Currently logged-in user object
 
-// ─── PASSWORD SECURITY ────────────────────────
-// FNV-1a 32-bit hash — one-way, passwords never stored as plaintext
-function hashPw(str){
-  let h=0x811c9dc5;
-  for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=(h*0x01000193)>>>0;}
+const CYEAR             = new Date().getFullYear();
+const DEFAULT_YEAR_RANGE = { min: CYEAR - 4, max: CYEAR + 4 };
+let YEAR_RANGE = JSON.parse(localStorage.getItem(SK.yearRange) || 'null') || DEFAULT_YEAR_RANGE;
+
+const isAdmin = () => CU?.role === 'admin';
+
+/* =============================================================
+   PASSWORD SECURITY
+   Passwords are hashed with FNV-1a (32-bit) on first login.
+   Plain-text `p` is deleted from the account object after hashing.
+   No plain-text password is ever saved to localStorage or Firebase.
+============================================================= */
+function hashPw(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h  = (h * 0x01000193) >>> 0;
+  }
   return h.toString(16);
 }
-function scrubAccounts(){
-  ACCOUNTS=ACCOUNTS.map(a=>{
-    if(a.p&&!a.ph){a.ph=hashPw(a.p);delete a.p;}
+
+// Migrate any account that still has a plain-text `p` field
+function scrubAccounts() {
+  ACCOUNTS = ACCOUNTS.map(function (a) {
+    if (a.p && !a.ph) { a.ph = hashPw(a.p); delete a.p; }
     return a;
   });
 }
-function checkPw(acc,plain){
-  if(acc.ph)return acc.ph===hashPw(plain);
-  if(acc.p)return acc.p===plain;
+
+// Compare login password against stored hash (or legacy plaintext)
+function checkPw(acc, plain) {
+  if (acc.ph) return acc.ph === hashPw(plain);
+  if (acc.p)  return acc.p  === plain; // legacy — removed on next saveAccounts()
   return false;
 }
 
-function saveAccounts(){
+/* =============================================================
+   SAVE FUNCTIONS
+   Each function writes to localStorage (instant, always works)
+   then syncs to Firebase in the background (best-effort).
+============================================================= */
+function saveAccounts() {
   scrubAccounts();
-  localStorage.setItem(SK.accounts,JSON.stringify(ACCOUNTS));
-  if(window._fbSet)window._fbSet('kpi/accounts',ACCOUNTS);
+  localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
+  window._fbSet('kpi/accounts', ACCOUNTS);
 }
-const CYEAR=new Date().getFullYear();
-const DEFAULT_YEAR_RANGE={min:CYEAR-4,max:CYEAR+4};
-let YEAR_RANGE=JSON.parse(localStorage.getItem(SK.yearRange)||'null')||DEFAULT_YEAR_RANGE;
-function saveYearRange(){localStorage.setItem(SK.yearRange,JSON.stringify(YEAR_RANGE));if(window._fbSet)window._fbSet('kpi/yearRange',YEAR_RANGE);}
+function saveTasks() {
+  localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
+  window._fbSet('kpi/tasks', TASKS);
+}
+function saveNotifs() {
+  localStorage.setItem(SK.notifs, JSON.stringify(NOTIFS));
+  window._fbSet('kpi/notifs', NOTIFS);
+}
+function saveYearRange() {
+  localStorage.setItem(SK.yearRange, JSON.stringify(YEAR_RANGE));
+  window._fbSet('kpi/yearRange', YEAR_RANGE);
+}
 
-// ─── SESSION PERSISTENCE ─────────────────────
-const SK_SESSION='tsc_session';
+/* =============================================================
+   SESSION
+   sessionStorage keeps the user logged in across page refreshes
+   but clears when the browser tab is closed.
+============================================================= */
+var SK_SESSION = 'tsc_session';
 
-// ─── LOGIN ────────────────────────────────────
-function doLogin(){
-  const u=$('li-u').value.trim().toLowerCase(),p=$('li-p').value;
-  const a=ACCOUNTS.find(x=>x.u===u&&checkPw(x,p));
-  if(!a){$('li-err').style.display='block';return;}
-  // Hash any unhashed passwords now and persist
-  if(a.p&&!a.ph){a.ph=hashPw(a.p);delete a.p;saveAccounts();}
-  CU=a;
-  sessionStorage.setItem(SK_SESSION,JSON.stringify({id:CU.id}));
-  $('login-screen').style.display='none';$('app').style.display='block';
+/* =============================================================
+   LOGIN / LOGOUT
+============================================================= */
+function doLogin() {
+  var u = $('li-u').value.trim().toLowerCase();
+  var p = $('li-p').value;
+  var a = ACCOUNTS.find(function (x) { return x.u === u && checkPw(x, p); });
+  if (!a) { $('li-err').style.display = 'block'; return; }
+
+  // Hash plain-text password on first login and save immediately
+  if (a.p && !a.ph) { a.ph = hashPw(a.p); delete a.p; saveAccounts(); }
+
+  CU = a;
+  sessionStorage.setItem(SK_SESSION, JSON.stringify({ id: CU.id }));
+  $('login-screen').style.display = 'none';
+  $('app').style.display = 'block';
   initApp();
 }
-function doLogout(){
-  if(typeof window._fbStopRealtime==='function') window._fbStopRealtime();
-  CU=null;
+
+function doLogout() {
+  window._fbStopRealtime();
+  CU = null;
   sessionStorage.removeItem(SK_SESSION);
-  try{ sessionStorage.removeItem('tsc_view'); }catch(e){}
-  $('login-screen').style.display='flex';$('app').style.display='none';
-  $('li-p').value='';$('li-err').style.display='none';
+  try { sessionStorage.removeItem('tsc_view'); } catch (e) {}
+  $('login-screen').style.display = 'flex';
+  $('app').style.display = 'none';
+  $('li-p').value = '';
+  $('li-err').style.display = 'none';
 }
-$('li-p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-$('li-u').addEventListener('keydown',e=>{if(e.key==='Enter')$('li-p').focus();});
 
-// ─── DATA ─────────────────────────────────────
-const CATS=['Project Proposal','Client Inquiry','Site Visit','Technical Report','After Sales Service','PO Checking','CAD Drawing','Others'];
-const MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+$('li-p').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+$('li-u').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('li-p').focus(); });
 
-let TASKS=JSON.parse(localStorage.getItem(SK.tasks)||'[]');
-let NOTIFS=JSON.parse(localStorage.getItem(SK.notifs)||'[]');
+/* =============================================================
+   CONSTANTS & LOOKUP HELPERS
+============================================================= */
+var CATS = ['Project Proposal','Client Inquiry','Site Visit','Technical Report',
+            'After Sales Service','PO Checking','CAD Drawing','Others'];
+var MOS  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function saveTasks(){localStorage.setItem(SK.tasks,JSON.stringify(TASKS));if(window._fbSet)window._fbSet('kpi/tasks',TASKS);}
-function saveNotifs(){localStorage.setItem(SK.notifs,JSON.stringify(NOTIFS));if(window._fbSet)window._fbSet('kpi/notifs',NOTIFS);}
-function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
-function $(id){return document.getElementById(id);}
-function set(id,v){const e=$(id);if(e)e.textContent=v;}
-function today(){return new Date().toISOString().split('T')[0];}
-function getAccountByInit(init){return ACCOUNTS.find(a=>a.init===init)||null;}
-function mineNotifs(){
-  if(!CU)return[];
-  // Backward compatibility: older notifications may only have `target` (init).
-  return NOTIFS.filter(n=>n.targetId===CU.id||(n.targetId===undefined&&n.target===CU.init));
+// DOM helpers
+function $(id)       { return document.getElementById(id); }
+function set(id, v)  { var e = $(id); if (e) e.textContent = v; }
+function today()     { return new Date().toISOString().split('T')[0]; }
+function uid()       { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+
+// Security: escape HTML special characters before inserting user content into innerHTML.
+// Use esc() on any value that came from user input (task names, notes, account names, etc.)
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
-const isOv=t=>t.due&&t.due<today()&&t.status!=='completed'&&t.status!=='cancelled';
-function wkRange(){const n=new Date(),d=n.getDay(),m=new Date(n);m.setDate(n.getDate()-(d===0?6:d-1));const s=new Date(m);s.setDate(m.getDate()+6);return[m.toISOString().split('T')[0],s.toISOString().split('T')[0]];}
-function nwRange(){const[,s]=wkRange();const m=new Date(s);m.setDate(m.getDate()+1);const e=new Date(m);e.setDate(m.getDate()+6);return[m.toISOString().split('T')[0],e.toISOString().split('T')[0]];}
-const inR=(d,[a,b])=>d>=a&&d<=b;
-const sLbl=s=>({not_started:'Not Started',in_progress:'In Progress',completed:'Completed',on_hold:'On Hold',cancelled:'Cancelled'}[s]||s);
-const pLbl=p=>({low:'Low',medium:'Medium',high:'High',critical:'Critical'}[p]||p);
 
-// Get all assignee inits for a task (supports old single and new multi-assign)
-function getAssignees(t){
-  if(Array.isArray(t.assignees)&&t.assignees.length)return t.assignees;
-  if(t.engineer)return[t.engineer];
-  return[];
+// Account helpers
+function getAccountByInit(init) { return ACCOUNTS.find(function (a) { return a.init === init; }) || null; }
+
+// Notifications: filter to only what the current user should see
+function mineNotifs() {
+  if (!CU) return [];
+  // Support both old (target init) and new (targetId) notification formats
+  return NOTIFS.filter(function (n) {
+    return n.targetId === CU.id || (n.targetId === undefined && n.target === CU.init);
+  });
 }
-function taskBelongsToUser(t){
-  if(isAdmin())return true;
+
+// Task helpers
+const isOv = t => t.due && t.due < today() && t.status !== 'completed' && t.status !== 'cancelled';
+
+function wkRange() {
+  var n = new Date(), d = n.getDay();
+  var mon = new Date(n); mon.setDate(n.getDate() - (d === 0 ? 6 : d - 1));
+  var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return [mon.toISOString().split('T')[0], sun.toISOString().split('T')[0]];
+}
+function nwRange() {
+  var s = new Date(wkRange()[1]); s.setDate(s.getDate() + 1);
+  var e = new Date(s); e.setDate(s.getDate() + 6);
+  return [s.toISOString().split('T')[0], e.toISOString().split('T')[0]];
+}
+const inR  = (d, [a, b]) => d >= a && d <= b;
+const sLbl = s => ({ not_started:'Not Started', in_progress:'In Progress', completed:'Completed', on_hold:'On Hold', cancelled:'Cancelled' }[s] || s);
+const pLbl = p => ({ low:'Low', medium:'Medium', high:'High', critical:'Critical' }[p] || p);
+
+// Return array of assignee initials for a task.
+// Supports both old single-engineer field and new multi-assignee array.
+function getAssignees(t) {
+  if (Array.isArray(t.assignees) && t.assignees.length) return t.assignees;
+  if (t.engineer) return [t.engineer];
+  return [];
+}
+
+function taskBelongsToUser(t) {
+  if (isAdmin()) return true;
   return getAssignees(t).includes(CU.init);
 }
 
-// ─── NOTIFICATIONS ────────────────────────────
-function addNotif(targetInit, message, taskId){
-  const acc=getAccountByInit(targetInit);
-  const notif={id:uid(),target:targetInit,targetId:acc?.id||null,message,taskId,time:new Date().toISOString(),read:false};
+/* =============================================================
+   NOTIFICATIONS
+   Stored in NOTIFS array. Each notification has:
+     { id, target (init), targetId (account id), message,
+       taskId, time (ISO string), read (bool) }
+   addNotif()    — create and save a notification for a user
+   updateNotifBadge() — refresh the red badge count in the header
+   toggleNotifPanel() — open/close the dropdown, positioned dynamically
+============================================================= */
+function addNotif(targetInit, message, taskId) {
+  var acc   = getAccountByInit(targetInit);
+  var notif = {
+    id:       uid(),
+    target:   targetInit,
+    targetId: acc ? acc.id : null,
+    message:  message,
+    taskId:   taskId,
+    time:     new Date().toISOString(),
+    read:     false
+  };
   NOTIFS.unshift(notif);
   saveNotifs();
   updateNotifBadge();
 }
-function updateNotifBadge(){
-  const unread=mineNotifs().filter(n=>!n.read).length;
-  const badge=$('notif-badge');
-  if(badge){badge.textContent=unread;badge.classList.toggle('show',unread>0);}
+
+function updateNotifBadge() {
+  var unread = mineNotifs().filter(function (n) { return !n.read; }).length;
+  var badge  = $('notif-badge');
+  if (!badge) return;
+  badge.textContent = unread;
+  badge.classList.toggle('show', unread > 0);
 }
-function toggleNotifPanel(){
-  var panel=$('notif-panel');
-  if(!panel)return;
-  var willOpen=!panel.classList.contains('open');
-  panel.classList.toggle('open',willOpen);
-  if(willOpen){
+
+function toggleNotifPanel() {
+  var panel    = $('notif-panel');
+  var btn      = $('notif-btn');
+  if (!panel) return;
+
+  var opening = !panel.classList.contains('open');
+  panel.classList.toggle('open', opening);
+
+  if (opening) {
     renderNotifPanel();
-    // Position below the bell button on any screen size
-    var btn=$('notif-btn');
-    if(btn){
-      var r=btn.getBoundingClientRect();
-      var panelW=Math.min(320,window.innerWidth-24);
-      var leftPos=r.right-panelW;
-      if(leftPos<8)leftPos=8;
-      panel.style.top=(r.bottom+6)+'px';
-      panel.style.left=leftPos+'px';
-      panel.style.right='auto';
-      panel.style.width=panelW+'px';
+    // Dynamically position below the bell button — works on any screen size
+    if (btn) {
+      var rect     = btn.getBoundingClientRect();
+      var panelW   = Math.min(320, window.innerWidth - 24);
+      var leftPos  = rect.right - panelW;
+      if (leftPos < 8) leftPos = 8;
+      panel.style.top   = (rect.bottom + 6) + 'px';
+      panel.style.left  = leftPos + 'px';
+      panel.style.right = 'auto';
+      panel.style.width = panelW + 'px';
     }
   }
 }
-function renderNotifPanel(){
-  const list=$('notif-list');if(!list)return;
-  const mine=mineNotifs();
-  if(!mine.length){list.innerHTML='<div class="notif-empty">No notifications</div>';return;}
-  list.innerHTML=mine.map(n=>`
-    <div class="notif-item ${n.read?'':'unread'}" onclick="markNotifRead('${n.id}')">
-      <div class="notif-item-t">📋 ${n.message}</div>
-      <div class="notif-item-s">${new Date(n.time).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
-    </div>`).join('');
-}
-function markNotifRead(id){
-  const n=NOTIFS.find(x=>x.id===id);if(n)n.read=true;
-  saveNotifs();renderNotifPanel();updateNotifBadge();
-}
-function clearNotifs(){
-  NOTIFS=NOTIFS.filter(n=>!(n.targetId===CU?.id||(n.targetId===undefined&&n.target===CU?.init)));
-  saveNotifs();renderNotifPanel();updateNotifBadge();
+
+function renderNotifPanel() {
+  var list = $('notif-list');
+  if (!list) return;
+  var mine = mineNotifs();
+  if (!mine.length) {
+    list.innerHTML = '<div class="notif-empty">No notifications</div>';
+    return;
+  }
+  list.innerHTML = mine.map(function (n) {
+    var timeStr = new Date(n.time).toLocaleString('en-PH', {
+      month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'
+    });
+    var cls = n.read ? 'notif-item' : 'notif-item unread';
+    return '<div class="' + cls + '" onclick="markNotifRead('' + n.id + '')">' +
+             '<div class="notif-item-t">📋 ' + esc(n.message) + '</div>' +
+             '<div class="notif-item-s">' + timeStr + '</div>' +
+           '</div>';
+  }).join('');
 }
 
-// Close notif panel on outside click
-document.addEventListener('click',e=>{
-  const panel=$('notif-panel');
-  const btn=$('notif-btn');
-  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target))panel.classList.remove('open');
+function markNotifRead(id) {
+  var n = NOTIFS.find(function (x) { return x.id === id; });
+  if (n) n.read = true;
+  saveNotifs();
+  renderNotifPanel();
+  updateNotifBadge();
+}
+
+function clearNotifs() {
+  // Only clear notifications belonging to the current user
+  NOTIFS = NOTIFS.filter(function (n) {
+    var isOwn = n.targetId === CU?.id || (n.targetId === undefined && n.target === CU?.init);
+    return !isOwn;
+  });
+  saveNotifs();
+  renderNotifPanel();
+  updateNotifBadge();
+}
+
+// Close notification panel when clicking anywhere outside it
+document.addEventListener('click', function (e) {
+  var panel = $('notif-panel');
+  var btn   = $('notif-btn');
+  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.classList.remove('open');
+  }
 });
 
-// ─── INIT APP ─────────────────────────────────
-function initApp(){
-  const now=new Date();
-  $('hdr-date').textContent=now.toLocaleDateString('en-PH',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
-  const av=$('u-av');av.textContent=CU.init;av.style.background=CU.color;
-  $('u-name').textContent=CU.display;
-  const ch=$('u-chip');ch.textContent=isAdmin()?'Admin':'Member';
-  ch.className='u-chip '+(isAdmin()?'chip-admin':'chip-member');
-  document.querySelectorAll('.admin-only').forEach(e=>e.style.display=isAdmin()?'':'none');
-  const repBtn=$('sbi-reports');
-  if(repBtn)repBtn.style.display=isAdmin()?'':'none';
-  // Tasks sidebar label
-  set('sb-tasks-lbl',isAdmin()?'All Tasks':'My Tasks');
-  populateYears();populateRepMemberSel();
-  const dfYr=$('df-yr'),dfMo=$('df-mo');
-  if(dfYr)dfYr.value=String(now.getFullYear());
-  if(dfMo)dfMo.value=String(now.getMonth()+1);
-  const repYr=$('rep-yr'),repMo=$('rep-mo');
-  if(repYr)repYr.value=String(now.getFullYear());
-  if(repMo)repMo.value=String(now.getMonth()+1).padStart(2,'0');
-  sv('dashboard');updateBadges();updateNotifBadge();
-  // Restore last active view (survives refresh via sessionStorage)
-  try{
-    var savedView=sessionStorage.getItem('tsc_view');
-    var allowedViews=isAdmin()?['dashboard','tasks','add','reports','team','accounts']:['dashboard','tasks','team'];
-    if(savedView&&allowedViews.includes(savedView)&&savedView!=='dashboard'){
+/* =============================================================
+   INIT APP
+   Called once after successful login. Sets up the UI for the
+   current user's role, restores their last view, and starts
+   Firebase real-time listeners.
+============================================================= */
+function initApp() {
+  var now = new Date();
+
+  // Header: date + user info
+  $('hdr-date').textContent = now.toLocaleDateString('en-PH', {
+    weekday:'short', year:'numeric', month:'short', day:'numeric'
+  });
+  var av = $('u-av');
+  av.textContent    = CU.init;
+  av.style.background = CU.color;
+  $('u-name').textContent = CU.display;
+  var ch = $('u-chip');
+  ch.textContent  = isAdmin() ? 'Admin' : 'Member';
+  ch.className    = 'u-chip ' + (isAdmin() ? 'chip-admin' : 'chip-member');
+
+  // Show/hide elements based on role
+  document.querySelectorAll('.admin-only').forEach(function (e) {
+    e.style.display = isAdmin() ? '' : 'none';
+  });
+  var repBtn = $('sbi-reports');
+  if (repBtn) repBtn.style.display = isAdmin() ? '' : 'none';
+  set('sb-tasks-lbl', isAdmin() ? 'All Tasks' : 'My Tasks');
+
+  // Set dashboard and reports filters to current month by default
+  var yr  = String(now.getFullYear());
+  var mo  = String(now.getMonth() + 1);
+  var moP = mo.padStart(2, '0');
+  if ($('df-yr'))  $('df-yr').value  = yr;
+  if ($('df-mo'))  $('df-mo').value  = mo;
+  if ($('rep-yr')) $('rep-yr').value = yr;
+  if ($('rep-mo')) $('rep-mo').value = moP;
+
+  populateYears();
+  populateRepMemberSel();
+
+  // Load dashboard first, then restore the user's last viewed tab
+  sv('dashboard');
+  updateBadges();
+  updateNotifBadge();
+
+  try {
+    var savedView    = sessionStorage.getItem('tsc_view');
+    var adminViews   = ['dashboard','tasks','add','reports','team','accounts'];
+    var memberViews  = ['dashboard','tasks','team'];
+    var allowed      = isAdmin() ? adminViews : memberViews;
+    if (savedView && allowed.includes(savedView) && savedView !== 'dashboard') {
       sv(savedView);
     }
-  }catch(e){}
-  // Start real-time Firestore listeners so tasks & notifs update instantly
-  if(typeof window._fbStartRealtime==='function') window._fbStartRealtime();
+  } catch (e) {}
+
+  // Start Firebase real-time sync (tasks, notifs, accounts)
+  window._fbStartRealtime();
 }
 
-// ─── SIDEBAR ──────────────────────────────────
-let sbOpen=false;
-function toggleSb(){sbOpen=!sbOpen;$('sidebar').classList.toggle('open',sbOpen);}
-function toggleMobileSb(){
-  const sb=$('sidebar'),ov=$('mob-overlay');
-  sb.classList.toggle('mob-open');
-  ov.classList.toggle('show',sb.classList.contains('mob-open'));
+/* =============================================================
+   SIDEBAR
+============================================================= */
+let sbOpen = false;
+
+function toggleSb() {
+  sbOpen = !sbOpen;
+  $('sidebar').classList.toggle('open', sbOpen);
 }
-function closeMobileSb(){
+function toggleMobileSb() {
+  var sb = $('sidebar'), ov = $('mob-overlay');
+  sb.classList.toggle('mob-open');
+  ov.classList.toggle('show', sb.classList.contains('mob-open'));
+}
+function closeMobileSb() {
   $('sidebar').classList.remove('mob-open');
   $('mob-overlay').classList.remove('show');
 }
-function updateBadges(){
-  const ovCount=isAdmin()
+
+// Update the overdue badge count in the sidebar
+function updateBadges() {
+  var ovCount = isAdmin()
     ? TASKS.filter(isOv).length
-    : TASKS.filter(t=>isOv(t)&&getAssignees(t).includes(CU?.init)).length;
-  set('sb-ov',ovCount);
+    : TASKS.filter(function (t) { return isOv(t) && getAssignees(t).includes(CU?.init); }).length;
+  set('sb-ov', ovCount);
 }
 
-// ─── VIEWS ────────────────────────────────────
-let _qf='';
-const VIEWS=['dashboard','tasks','add','reports','team','accounts'];
-function sv(v){
-  if(v==='reports'&&!isAdmin()){sv('dashboard');return;}
-  if(v==='add'&&!isAdmin()){sv('dashboard');return;}
-  if(v==='accounts'&&!isAdmin()){sv('dashboard');return;}
-  document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
-  $('view-'+v)?.classList.add('active');
-  VIEWS.forEach(n=>{const b=$('sbi-'+n);if(b)b.classList.toggle('active',n===v);});
-  if(window.innerWidth<=768)closeMobileSb();
-  // Persist current view so page refresh restores it
-  try{ sessionStorage.setItem('tsc_view', v); }catch(e){}
-  // Scroll content area back to top on tab switch
-  const contentEl=document.querySelector('.content');
-  if(contentEl)contentEl.scrollTop=0;
-  if(v==='dashboard')renderDash();
-  if(v==='tasks'){
-    _qf='';
+/* =============================================================
+   VIEW ROUTING (sv = "show view")
+   Switches the visible panel, updates sidebar active state,
+   saves the active view to sessionStorage for refresh-restore,
+   and calls the relevant render function.
+============================================================= */
+let _qf = ''; // active quick-filter key (e.g. 'overdue', 'today')
+const VIEWS = ['dashboard','tasks','add','reports','team','accounts'];
+
+function sv(v) {
+  // Role guards — redirect non-admins away from restricted views
+  if ((v === 'reports' || v === 'add' || v === 'accounts') && !isAdmin()) {
+    sv('dashboard'); return;
+  }
+
+  // Swap visible view panel
+  document.querySelectorAll('.view').forEach(function (e) { e.classList.remove('active'); });
+  $('view-' + v)?.classList.add('active');
+
+  // Update sidebar active state
+  VIEWS.forEach(function (n) {
+    var b = $('sbi-' + n);
+    if (b) b.classList.toggle('active', n === v);
+  });
+
+  // On mobile, close the drawer after navigating
+  if (window.innerWidth <= 768) closeMobileSb();
+
+  // Remember this view so a page refresh returns here
+  try { sessionStorage.setItem('tsc_view', v); } catch (e) {}
+
+  // Scroll content to top (avoids being mid-page on a different tab)
+  var contentEl = document.querySelector('.content');
+  if (contentEl) contentEl.scrollTop = 0;
+
+  // Render the selected view
+  if (v === 'dashboard') renderDash();
+  if (v === 'tasks') {
+    _qf = '';
     setTaskDefaultPeriod();
-    $('admin-tasks-view').style.display='';
-    $('member-tasks-view').style.display='none';
-    const addBtn=$('tasks-add-btn');if(addBtn)addBtn.style.display=isAdmin()?'':'none';
+    $('admin-tasks-view').style.display  = '';
+    $('member-tasks-view').style.display = 'none';
+    var addBtn = $('tasks-add-btn');
+    if (addBtn) addBtn.style.display = isAdmin() ? '' : 'none';
     renderTbl();
   }
-  if(v==='add'){populateAssigneeChecks('f-assignees');}
+  if (v === 'add') { populateAssigneeChecks('f-assignees'); }
   if(v==='reports')renderReports();
   if(v==='team')renderTeam();
   if(v==='accounts'){renderAccounts();renderYearRangeSettings();}
@@ -1733,7 +1994,7 @@ function renderTbl(){
     return`<tr class="${ov?'ov-row':''}">
       <td style="color:var(--tx3);font-size:11px;font-family:'JetBrains Mono',monospace;">${i+1}</td>
       <td>
-        <div style="font-weight:600;font-size:13px;">${ov?'<span style="color:var(--rd);">⚠ </span>':''}${t.name}</div>
+        <div style="font-weight:600;font-size:13px;">${ov?'<span style="color:var(--rd);">⚠ </span>':''}${esc(t.name)}</div>
         ${t.client?`<div style="font-size:11px;color:var(--tx3);margin-top:2px;">📁 ${t.client}</div>`:''}
         ${commentCount?`<div style="font-size:10.5px;color:var(--tx3);margin-top:2px;">💬 ${commentCount} comment${commentCount!==1?'s':''}</div>`:''}
       </td>
@@ -2017,7 +2278,12 @@ function adminDeleteComment(taskId, commentId){
   refreshAllViews();
 }
 
-function refreshAllViews(){
+/* =============================================================
+   REFRESH
+   Called by Firebase real-time listener when remote data changes.
+   Re-renders whichever view is currently visible.
+============================================================= */
+function refreshAllViews() {
   updateBadges();
   populateYears();
   renderDash();
@@ -2503,7 +2769,14 @@ function exportPDFFromTasks(tasks, filename, filterDesc){
   doc.save(filename+'.pdf');
 }
 
-function importJSON(e){
+/* =============================================================
+   IMPORT / EXPORT
+   importJSON: reads a previously exported JSON file and merges
+   it into the current dataset, then saves to both localStorage
+   and Firebase.
+   exportJSON / exportCSV / exportPDF: generate download files.
+============================================================= */
+function importJSON(e) {
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=function(ev){
