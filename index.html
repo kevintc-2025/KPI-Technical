@@ -27,13 +27,6 @@
   });
   const _db = firebase.firestore();
 
-  // Global save function — called by saveTasks(), saveAccounts(), etc.
-  window._fbSet = function(docPath, value) {
-    const parts = docPath.split('/');
-    _db.collection(parts[0]).doc(parts[1]).set({ value: value })
-      .catch(function(e){ console.warn('Firebase write error:', e.message); });
-  };
-
   // Initial one-time load (used at startup before listeners attach)
   window._fbLoad = function(callback) {
     var retries = 0;
@@ -61,26 +54,29 @@
   };
 
   // ── Real-time listeners ──────────────────────────────────────────────
-  // Called once the app is fully initialised (after login).
-  // Each onSnapshot fires immediately with current data, then on every change.
-  var _rtListeners = []; // keep unsubscribe fns so we can detach on logout
+  var _rtListeners = [];
+  var _fbWriting = false; // set true briefly after our own writes to skip the echo snapshot
+
+  window._fbSet = function(docPath, value) {
+    const parts = docPath.split('/');
+    _fbWriting = true;
+    _db.collection(parts[0]).doc(parts[1]).set({ value: value })
+      .then(function(){ setTimeout(function(){ _fbWriting = false; }, 800); })
+      .catch(function(e){ _fbWriting = false; console.warn('Firebase write error:', e.message); });
+  };
 
   window._fbStartRealtime = function() {
-    // Detach any previous listeners (e.g. re-login)
     _rtListeners.forEach(function(u){ try{ u(); }catch(e){} });
     _rtListeners = [];
 
-    // Helper: guard against running before CU is set
     function isReady(){ return typeof CU !== 'undefined' && CU !== null; }
 
     // ── tasks ──
     _rtListeners.push(
       _db.collection('kpi').doc('tasks').onSnapshot(function(snap) {
-        if(!snap.exists || !isReady()) return;
+        if(!snap.exists || !isReady() || _fbWriting) return;
         var fresh = snap.data().value;
         if(!Array.isArray(fresh)) return;
-        // Only apply if the data actually changed (avoid re-render on our own writes)
-        if(JSON.stringify(fresh) === JSON.stringify(typeof TASKS !== 'undefined' ? TASKS : [])) return;
         TASKS = fresh;
         localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
         refreshAllViews();
@@ -90,14 +86,12 @@
     // ── notifs ──
     _rtListeners.push(
       _db.collection('kpi').doc('notifs').onSnapshot(function(snap) {
-        if(!snap.exists || !isReady()) return;
+        if(!snap.exists || !isReady() || _fbWriting) return;
         var fresh = snap.data().value;
         if(!Array.isArray(fresh)) return;
-        if(JSON.stringify(fresh) === JSON.stringify(typeof NOTIFS !== 'undefined' ? NOTIFS : [])) return;
         NOTIFS = fresh;
         localStorage.setItem(SK.notifs, JSON.stringify(NOTIFS));
         updateNotifBadge();
-        // If the notif panel is open, re-render it
         var panel = document.getElementById('notif-panel');
         if(panel && panel.classList.contains('open')) renderNotifPanel();
       }, function(err){ console.warn('RT notifs error:', err.message); })
@@ -106,15 +100,13 @@
     // ── accounts ──
     _rtListeners.push(
       _db.collection('kpi').doc('accounts').onSnapshot(function(snap) {
-        if(!snap.exists || !isReady()) return;
+        if(!snap.exists || !isReady() || _fbWriting) return;
         var fresh = snap.data().value;
         if(!Array.isArray(fresh)) return;
-        if(JSON.stringify(fresh) === JSON.stringify(typeof ACCOUNTS !== 'undefined' ? ACCOUNTS : [])) return;
         ACCOUNTS = fresh;
         localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
-        // Keep CU in sync if current user's profile changed
-        if(CU) { var updated = ACCOUNTS.find(function(a){ return a.id === CU.id; }); if(updated) CU = updated; }
-        if(typeof renderAccounts === 'function' && typeof isAdmin === 'function' && isAdmin()) renderAccounts();
+        if(CU){ var updated=ACCOUNTS.find(function(a){ return a.id===CU.id; }); if(updated) CU=updated; }
+        if(typeof renderAccounts==='function' && typeof isAdmin==='function' && isAdmin()) renderAccounts();
       }, function(err){ console.warn('RT accounts error:', err.message); })
     );
   };
@@ -127,6 +119,7 @@
   } // end else (firebase defined)
 
   // Fallback stubs when Firebase is unavailable
+  if(typeof window._fbSet          === 'undefined') window._fbSet          = function(){};
   if(typeof window._fbStartRealtime === 'undefined') window._fbStartRealtime = function(){};
   if(typeof window._fbStopRealtime  === 'undefined') window._fbStopRealtime  = function(){};
 </script>
@@ -1243,6 +1236,7 @@ function doLogout(){
   if(typeof window._fbStopRealtime==='function') window._fbStopRealtime();
   CU=null;
   sessionStorage.removeItem(SK_SESSION);
+  try{ sessionStorage.removeItem('tsc_view'); }catch(e){}
   $('login-screen').style.display='flex';$('app').style.display='none';
   $('li-p').value='';$('li-err').style.display='none';
 }
@@ -1367,6 +1361,14 @@ function initApp(){
   if(repYr)repYr.value=String(now.getFullYear());
   if(repMo)repMo.value=String(now.getMonth()+1).padStart(2,'0');
   sv('dashboard');updateBadges();updateNotifBadge();
+  // Restore last active view (survives refresh via sessionStorage)
+  try{
+    var savedView=sessionStorage.getItem('tsc_view');
+    var allowedViews=isAdmin()?['dashboard','tasks','add','reports','team','accounts']:['dashboard','tasks','team'];
+    if(savedView&&allowedViews.includes(savedView)&&savedView!=='dashboard'){
+      sv(savedView);
+    }
+  }catch(e){}
   // Start real-time Firestore listeners so tasks & notifs update instantly
   if(typeof window._fbStartRealtime==='function') window._fbStartRealtime();
 }
@@ -1395,10 +1397,14 @@ let _qf='';
 const VIEWS=['dashboard','tasks','add','reports','team','accounts'];
 function sv(v){
   if(v==='reports'&&!isAdmin()){sv('dashboard');return;}
+  if(v==='add'&&!isAdmin()){sv('dashboard');return;}
+  if(v==='accounts'&&!isAdmin()){sv('dashboard');return;}
   document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
   $('view-'+v)?.classList.add('active');
   VIEWS.forEach(n=>{const b=$('sbi-'+n);if(b)b.classList.toggle('active',n===v);});
   if(window.innerWidth<=768)closeMobileSb();
+  // Persist current view so page refresh restores it
+  try{ sessionStorage.setItem('tsc_view', v); }catch(e){}
   // Scroll content area back to top on tab switch
   const contentEl=document.querySelector('.content');
   if(contentEl)contentEl.scrollTop=0;
@@ -1411,10 +1417,10 @@ function sv(v){
     const addBtn=$('tasks-add-btn');if(addBtn)addBtn.style.display=isAdmin()?'':'none';
     renderTbl();
   }
-  if(v==='add'){if(!isAdmin()){sv('dashboard');return;}populateAssigneeChecks('f-assignees');}
+  if(v==='add'){populateAssigneeChecks('f-assignees');}
   if(v==='reports')renderReports();
   if(v==='team')renderTeam();
-  if(v==='accounts'){if(!isAdmin()){sv('dashboard');return;}renderAccounts();renderYearRangeSettings();}
+  if(v==='accounts'){renderAccounts();renderYearRangeSettings();}
 }
 function qf(type){
   _qf=type;
