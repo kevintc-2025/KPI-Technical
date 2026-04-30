@@ -125,16 +125,16 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--tx);min-he
 .notif-badge.show{display:block;}
 .notif-panel{
   position:fixed;
-  top:56px;
+  top:58px;
   right:12px;
   width:320px;
-  max-width:calc(100vw - 16px);
+  max-width:calc(100vw - 24px);
   max-height:70vh;
   background:var(--card);
   border:1px solid var(--border);
   border-radius:var(--r);
   box-shadow:var(--sh3);
-  z-index:9999;
+  z-index:99999;
   display:none;
   overflow-y:auto;
   overflow-x:hidden;
@@ -295,20 +295,20 @@ tbody tr:last-child td{border-bottom:none;}
 .ld{width:8px;height:8px;border-radius:3px;flex-shrink:0;}
 .lc{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;margin-left:auto;color:var(--tx2);}
 
+/* ── OVERALL PROGRESS LAYOUT ── */
+.prog-wrap{display:flex;align-items:center;gap:20px;}
+.prog-ring-box{width:120px;height:120px;flex-shrink:0;}
+.prog-svg{width:120px;height:120px;display:block;}
+.prog-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;min-width:0;}
+.prog-stat{border-radius:10px;padding:11px;text-align:center;}
+.prog-stat-v{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;}
+.prog-stat-l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;}
+
 /* ── RING ── */
 .ring-wrap{position:relative;flex-shrink:0;}
 .ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
 .ring-pct{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace;}
 .ring-lbl{font-size:10.5px;color:var(--tx2);font-weight:500;}
-
-/* ── OVERALL PROGRESS LAYOUT ── */
-.progress-layout{display:flex;align-items:center;gap:20px;}
-.progress-ring{width:120px;height:120px;flex-shrink:0;}
-.progress-svg{width:120px;height:120px;}
-.progress-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;min-width:0;}
-.ps-item{border-radius:10px;padding:11px;text-align:center;}
-.ps-val{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;}
-.ps-lbl{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;}
 
 /* ── GAUGE ── */
 .gauge-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
@@ -564,7 +564,7 @@ tbody tr:last-child td{border-bottom:none;}
   #rep-member-selector .card>div{flex-direction:column;align-items:stretch;gap:8px;}
   #rep-member-selector .df-sel{width:100%;}
 
-  /* — Notif panel — already fixed positioned globally, no override needed — */
+  /* notif-panel: handled by fixed position globally */
 
   /* — Toast — */
   .toast{bottom:14px;right:8px;left:8px;text-align:center;font-size:12px;padding:10px 12px;border-radius:10px;}
@@ -573,29 +573,14 @@ tbody tr:last-child td{border-bottom:none;}
   .dn-wrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;}
   .ring-wrap svg{width:76px!important;height:76px!important;}
   .ring-pct{font-size:17px;}
-
-  /* — Overall Progress mobile: stack ring on top, stats below — */
-  .progress-layout{
-    flex-direction:column!important;
-    align-items:center!important;
-    gap:12px!important;
-  }
-  .progress-ring{
-    width:90px!important;
-    height:90px!important;
-  }
-  .progress-svg{
-    width:90px!important;
-    height:90px!important;
-  }
-  .progress-stats{
-    width:100%!important;
-    flex:unset!important;
-    gap:6px!important;
-  }
-  .ps-val{font-size:18px!important;}
-  .ps-lbl{font-size:9px!important;}
-  .ps-item{padding:8px 4px!important;}
+  /* Overall progress — stack vertically on mobile */
+  .prog-wrap{flex-direction:column!important;align-items:center!important;gap:10px!important;}
+  .prog-ring-box{width:90px!important;height:90px!important;}
+  .prog-svg{width:90px!important;height:90px!important;}
+  .prog-stats{width:100%!important;flex:unset!important;gap:6px!important;}
+  .prog-stat{padding:8px 6px!important;}
+  .prog-stat-v{font-size:18px!important;}
+  .prog-stat-l{font-size:9px!important;}
 
   /* — Timeline & gauge — */
   .tl-name{font-size:12px;}
@@ -741,19 +726,19 @@ tbody tr:last-child td{border-bottom:none;}
     </div>
     <div class="card">
       <div class="ct">Overall Progress</div>
-      <div class="progress-layout">
-        <div class="ring-wrap progress-ring">
-          <svg class="progress-svg" width="120" height="120" viewBox="0 0 120 120">
+      <div class="prog-wrap">
+        <div class="prog-ring-box ring-wrap">
+          <svg class="prog-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
             <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg2)" stroke-width="13"/>
             <circle id="ring-c" cx="60" cy="60" r="50" fill="none" stroke="var(--ac)" stroke-width="13" stroke-linecap="round" stroke-dasharray="0 314" transform="rotate(-90 60 60)" style="transition:stroke-dasharray .9s cubic-bezier(.4,0,.2,1)"/>
           </svg>
           <div class="ring-center"><div class="ring-pct" id="ring-pct">0%</div><div class="ring-lbl">Done</div></div>
         </div>
-        <div class="progress-stats">
-          <div class="ps-item" style="background:var(--gr-bg);"><div class="ps-val" style="color:var(--gr);" id="mc-comp">0</div><div class="ps-lbl" style="color:var(--gr);">Completed</div></div>
-          <div class="ps-item" style="background:var(--rd-bg);"><div class="ps-val" style="color:var(--rd);" id="mc-ov">0</div><div class="ps-lbl" style="color:var(--rd);">Overdue</div></div>
-          <div class="ps-item" style="background:var(--ac-tint);"><div class="ps-val" style="color:var(--ac);" id="mc-wk">0</div><div class="ps-lbl" style="color:var(--ac);">This Week</div></div>
-          <div class="ps-item" style="background:var(--or-bg);"><div class="ps-val" style="color:var(--or);" id="mc-nw">0</div><div class="ps-lbl" style="color:var(--or);">Next Week</div></div>
+        <div class="prog-stats">
+          <div class="prog-stat" style="background:var(--gr-bg);"><div class="prog-stat-v" style="color:var(--gr);" id="mc-comp">0</div><div class="prog-stat-l" style="color:var(--gr);">Completed</div></div>
+          <div class="prog-stat" style="background:var(--rd-bg);"><div class="prog-stat-v" style="color:var(--rd);" id="mc-ov">0</div><div class="prog-stat-l" style="color:var(--rd);">Overdue</div></div>
+          <div class="prog-stat" style="background:var(--ac-tint);"><div class="prog-stat-v" style="color:var(--ac);" id="mc-wk">0</div><div class="prog-stat-l" style="color:var(--ac);">This Week</div></div>
+          <div class="prog-stat" style="background:var(--or-bg);"><div class="prog-stat-v" style="color:var(--or);" id="mc-nw">0</div><div class="prog-stat-l" style="color:var(--or);">Next Week</div></div>
         </div>
       </div>
     </div>
@@ -1215,18 +1200,19 @@ function updateNotifBadge(){
 function toggleNotifPanel(){
   var panel=$('notif-panel');
   if(!panel)return;
-  panel.classList.toggle('open');
-  if(panel.classList.contains('open')){
+  var willOpen=!panel.classList.contains('open');
+  panel.classList.toggle('open',willOpen);
+  if(willOpen){
     renderNotifPanel();
-    // Position panel below the bell button
+    // Position below the bell button on any screen size
     var btn=$('notif-btn');
     if(btn){
-      var rect=btn.getBoundingClientRect();
-      var panelW=Math.min(320,window.innerWidth-16);
-      var left=rect.right-panelW;
-      if(left<8)left=8;
-      panel.style.top=(rect.bottom+6)+'px';
-      panel.style.left=left+'px';
+      var r=btn.getBoundingClientRect();
+      var panelW=Math.min(320,window.innerWidth-24);
+      var leftPos=r.right-panelW;
+      if(leftPos<8)leftPos=8;
+      panel.style.top=(r.bottom+6)+'px';
+      panel.style.left=leftPos+'px';
       panel.style.right='auto';
       panel.style.width=panelW+'px';
     }
@@ -1252,12 +1238,10 @@ function clearNotifs(){
 }
 
 // Close notif panel on outside click
-document.addEventListener('click',function(e){
-  var panel=$('notif-panel');
-  var btn=$('notif-btn');
-  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target)){
-    panel.classList.remove('open');
-  }
+document.addEventListener('click',e=>{
+  const panel=$('notif-panel');
+  const btn=$('notif-btn');
+  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target))panel.classList.remove('open');
 });
 
 // ─── INIT APP ─────────────────────────────────
@@ -1969,9 +1953,9 @@ function renderReports(){
       const col=er>=80?'var(--gr)':er>=50?'var(--ac)':'var(--rd)';
       return`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span style="font-weight:700;display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
-            <span style="width:26px;height:26px;border-radius:50%;background:${acc.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;">${acc.init.slice(0,2)}</span>
-            <span style="word-break:break-word;min-width:0;">${acc.init} – ${acc.fullName||acc.display}</span>
+          <span style="font-weight:700;display:flex;align-items:center;gap:8px;">
+            <span style="width:26px;height:26px;border-radius:50%;background:${acc.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${acc.init.slice(0,2)}</span>
+            ${acc.init} – ${acc.fullName||acc.display}
           </span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:${col}">${er}%</span>
         </div>
@@ -1989,20 +1973,16 @@ function renderReports(){
     const erBase=et.filter(t=>t.status!=='cancelled').length;
     const er=erBase?Math.round(ec/erBase*100):0;
     const col=er>=80?'var(--gr)':er>=50?'var(--ac)':'var(--rd)';
-    $('rep-eng').innerHTML=`<div style="padding:10px 0;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
-        <span style="width:44px;height:44px;border-radius:50%;background:${acc?.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">${(acc?.init||selMember).slice(0,2)}</span>
-        <div style="min-width:0;flex:1;">
-          <div style="font-weight:700;font-size:14px;word-break:break-word;">${acc?.fullName||acc?.display||selMember}</div>
-          <div style="font-size:11.5px;color:var(--tx2);">${acc?.position||'Engineer'}</div>
+    $('rep-eng').innerHTML=`<div style="display:flex;align-items:center;gap:16px;padding:10px 0;">
+      <span style="width:48px;height:48px;border-radius:50%;background:${acc?.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;">${(acc?.init||selMember).slice(0,2)}</span>
+      <div style="flex:1;">
+        <div style="font-weight:700;font-size:14px;">${acc?.fullName||acc?.display||selMember}</div>
+        <div style="font-size:11.5px;color:var(--tx2);">${acc?.position||'Engineer'}</div>
+        <div class="gauge-track" style="margin-top:8px;"><div class="gauge-fill" style="width:${er}%;background:${col};"></div></div>
+        <div style="font-size:11px;color:var(--tx2);margin-top:5px;display:flex;gap:12px;">
+          <span>Total: <b>${et.length}</b></span><span style="color:var(--gr)">Done: <b>${ec}</b></span><span style="color:var(--rd)">Overdue: <b>${eo}</b></span>
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:${col}">${er}% completion</span>
         </div>
-      </div>
-      <div class="gauge-track" style="margin-bottom:8px;"><div class="gauge-fill" style="width:${er}%;background:${col};"></div></div>
-      <div style="font-size:11px;color:var(--tx2);display:flex;gap:10px;flex-wrap:wrap;">
-        <span>Total: <b>${et.length}</b></span>
-        <span style="color:var(--gr)">Done: <b>${ec}</b></span>
-        <span style="color:var(--rd)">Overdue: <b>${eo}</b></span>
-        <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:${col}">${er}% done</span>
       </div>
     </div>`;
   }
@@ -2484,7 +2464,8 @@ function importJSON(e){
   }
 })();
 </script>
-<!-- Notification Panel — fixed overlay, outside header -->
+
+<!-- Notification Panel — fixed, outside all stacking contexts -->
 <div class="notif-panel" id="notif-panel">
   <div class="notif-hdr">
     <span class="notif-hdr-t">🔔 Notifications</span>
