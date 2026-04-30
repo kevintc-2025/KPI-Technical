@@ -34,11 +34,10 @@
       .catch(function(e){ console.warn('Firebase write error:', e.message); });
   };
 
-  // Load all data from Firestore, then start the app
+  // Initial one-time load (used at startup before listeners attach)
   window._fbLoad = function(callback) {
     var retries = 0;
     var maxRetries = 3;
-
     function attempt() {
       Promise.all([
         _db.collection('kpi').doc('tasks').get(),
@@ -54,18 +53,82 @@
         callback(null, result);
       }).catch(function(err) {
         console.warn('Firebase attempt ' + (retries+1) + ' failed: ' + err.message);
-        if(retries < maxRetries) {
-          retries++;
-          setTimeout(attempt, 2000 * retries); // wait 2s, 4s, 6s
-        } else {
-          console.warn('Firebase load error: ' + err.message);
-          callback(err, {});
-        }
+        if(retries < maxRetries) { retries++; setTimeout(attempt, 2000 * retries); }
+        else { console.warn('Firebase load error: ' + err.message); callback(err, {}); }
       });
     }
     attempt();
   };
+
+  // ── Real-time listeners ──────────────────────────────────────────────
+  // Called once the app is fully initialised (after login).
+  // Each onSnapshot fires immediately with current data, then on every change.
+  var _rtListeners = []; // keep unsubscribe fns so we can detach on logout
+
+  window._fbStartRealtime = function() {
+    // Detach any previous listeners (e.g. re-login)
+    _rtListeners.forEach(function(u){ try{ u(); }catch(e){} });
+    _rtListeners = [];
+
+    // Helper: guard against running before CU is set
+    function isReady(){ return typeof CU !== 'undefined' && CU !== null; }
+
+    // ── tasks ──
+    _rtListeners.push(
+      _db.collection('kpi').doc('tasks').onSnapshot(function(snap) {
+        if(!snap.exists || !isReady()) return;
+        var fresh = snap.data().value;
+        if(!Array.isArray(fresh)) return;
+        // Only apply if the data actually changed (avoid re-render on our own writes)
+        if(JSON.stringify(fresh) === JSON.stringify(typeof TASKS !== 'undefined' ? TASKS : [])) return;
+        TASKS = fresh;
+        localStorage.setItem(SK.tasks, JSON.stringify(TASKS));
+        refreshAllViews();
+      }, function(err){ console.warn('RT tasks error:', err.message); })
+    );
+
+    // ── notifs ──
+    _rtListeners.push(
+      _db.collection('kpi').doc('notifs').onSnapshot(function(snap) {
+        if(!snap.exists || !isReady()) return;
+        var fresh = snap.data().value;
+        if(!Array.isArray(fresh)) return;
+        if(JSON.stringify(fresh) === JSON.stringify(typeof NOTIFS !== 'undefined' ? NOTIFS : [])) return;
+        NOTIFS = fresh;
+        localStorage.setItem(SK.notifs, JSON.stringify(NOTIFS));
+        updateNotifBadge();
+        // If the notif panel is open, re-render it
+        var panel = document.getElementById('notif-panel');
+        if(panel && panel.classList.contains('open')) renderNotifPanel();
+      }, function(err){ console.warn('RT notifs error:', err.message); })
+    );
+
+    // ── accounts ──
+    _rtListeners.push(
+      _db.collection('kpi').doc('accounts').onSnapshot(function(snap) {
+        if(!snap.exists || !isReady()) return;
+        var fresh = snap.data().value;
+        if(!Array.isArray(fresh)) return;
+        if(JSON.stringify(fresh) === JSON.stringify(typeof ACCOUNTS !== 'undefined' ? ACCOUNTS : [])) return;
+        ACCOUNTS = fresh;
+        localStorage.setItem(SK.accounts, JSON.stringify(ACCOUNTS));
+        // Keep CU in sync if current user's profile changed
+        if(CU) { var updated = ACCOUNTS.find(function(a){ return a.id === CU.id; }); if(updated) CU = updated; }
+        if(typeof renderAccounts === 'function' && typeof isAdmin === 'function' && isAdmin()) renderAccounts();
+      }, function(err){ console.warn('RT accounts error:', err.message); })
+    );
+  };
+
+  window._fbStopRealtime = function() {
+    _rtListeners.forEach(function(u){ try{ u(); }catch(e){} });
+    _rtListeners = [];
+  };
+
   } // end else (firebase defined)
+
+  // Fallback stubs when Firebase is unavailable
+  if(typeof window._fbStartRealtime === 'undefined') window._fbStartRealtime = function(){};
+  if(typeof window._fbStopRealtime  === 'undefined') window._fbStopRealtime  = function(){};
 </script>
 <style>
 :root{
@@ -1177,6 +1240,7 @@ function doLogin(){
   initApp();
 }
 function doLogout(){
+  if(typeof window._fbStopRealtime==='function') window._fbStopRealtime();
   CU=null;
   sessionStorage.removeItem(SK_SESSION);
   $('login-screen').style.display='flex';$('app').style.display='none';
@@ -1303,6 +1367,8 @@ function initApp(){
   if(repYr)repYr.value=String(now.getFullYear());
   if(repMo)repMo.value=String(now.getMonth()+1).padStart(2,'0');
   sv('dashboard');updateBadges();updateNotifBadge();
+  // Start real-time Firestore listeners so tasks & notifs update instantly
+  if(typeof window._fbStartRealtime==='function') window._fbStartRealtime();
 }
 
 // ─── SIDEBAR ──────────────────────────────────
@@ -2252,11 +2318,22 @@ function getFilteredTasks(){
 }
 
 function exportCSV(){
+  if(!isAdmin()){toast('Access denied. Use "My Tasks" to download your tasks.','rd');return;}
   exportCSVFromTasks(TASKS,'technosam-kpi-'+today());
 }
 
 function exportCSVFiltered(){
-  const tasks=getFilteredTasks();
+  // Members can only download their own tasks
+  let tasks;
+  let filenameBase;
+  if(!isAdmin()){
+    tasks=TASKS.filter(t=>getAssignees(t).includes(CU.init));
+    filenameBase='technosam-my-tasks-filtered-'+today();
+    toast(`CSV exported! ${tasks.length} task${tasks.length!==1?'s':''}📊`,'ac');
+    exportCSVFromTasks(tasks,filenameBase);
+    return;
+  }
+  tasks=getFilteredTasks();
   const hasFilters=$('ts')?.value||$('tst')?.value||$('tpr')?.value||$('tca')?.value||$('ten')?.value||$('tyr')?.value||$('tmo')?.value||_qf;
   exportCSVFromTasks(tasks,'technosam-kpi-filtered-'+today());
   toast(`CSV exported! ${tasks.length} task${tasks.length!==1?'s':''} ${hasFilters?'(filtered)':''}📊`,'ac');
@@ -2276,10 +2353,19 @@ function exportCSVFromTasks(tasks, filename){
 }
 
 function exportPDF(){
+  if(!isAdmin()){toast('Access denied. Only administrators can download all tasks.','rd');return;}
   exportPDFFromTasks(TASKS,'technosam-kpi-report-'+today());
 }
 
 function exportPDFFiltered(){
+  // Members can only download their own tasks — ignore filters, scope to their profile
+  if(!isAdmin()){
+    const tasks=TASKS.filter(t=>getAssignees(t).includes(CU.init));
+    exportPDFFromTasks(tasks,'technosam-my-tasks-'+today(),`Member: ${CU.init}`);
+    toast(`PDF exported! ${tasks.length} task${tasks.length!==1?'s':''}📄`,'ac');
+    return;
+  }
+  // Admin: export filtered tasks with active filter description
   const tasks=getFilteredTasks();
   const hasFilters=$('ts')?.value||$('tst')?.value||$('tpr')?.value||$('tca')?.value||$('ten')?.value||$('tyr')?.value||$('tmo')?.value||_qf;
   const filterDesc=[];
@@ -2324,7 +2410,8 @@ function exportPDFFromTasks(tasks, filename, filterDesc){
   // Meta
   let y=28;
   doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(80,80,80);
-  doc.text(`Generated: ${new Date().toLocaleString('en-PH')}   |   Tasks: ${tasks.length}`,ml,y);
+  const userLabel=isAdmin()?'Admin Report':'Member Report – '+CU.init+(CU.fullName?' ('+CU.fullName+')':'');
+  doc.text(`Generated: ${new Date().toLocaleString('en-PH')}   |   Tasks: ${tasks.length}   |   ${userLabel}`,ml,y);
   y+=5;
   if(filterDesc){doc.setFontSize(7.5);doc.text(`Filters: ${filterDesc}`,ml,y);y+=5;}
   doc.setTextColor(0,0,0);
