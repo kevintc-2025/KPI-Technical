@@ -387,123 +387,200 @@ tbody tr:last-child td{border-bottom:none;}
   .dr1,.dr2,.dr3{grid-template-columns:1fr;}
   .kpi-grid{grid-template-columns:repeat(2,1fr);}
 }
-@media (max-width:780px){
-  .kpi-grid{grid-template-columns:1fr;}
+
+/* ══════════════════════════════════════════
+   MOBILE RESPONSIVE — full fluid layout
+══════════════════════════════════════════ */
+
+/* Mobile menu button — hidden on desktop */
+.mob-menu-btn{
+  display:none;
+  width:36px;height:36px;border-radius:9px;border:1px solid var(--border);
+  background:var(--bg);cursor:pointer;align-items:center;justify-content:center;
+  font-size:20px;transition:all .15s;flex-shrink:0;line-height:1;
+}
+.mob-menu-btn:hover{background:var(--pr-tint);border-color:var(--pr);}
+
+/* Overlay — hidden by default */
+.mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:499;touch-action:none;}
+.mob-overlay.show{display:block;}
+
+/* ── Tablet (≤1024px) ── */
+@media (max-width:1024px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr);}
+  .dr1,.dr2,.dr3{grid-template-columns:1fr;}
+  .eng-grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));}
+  .acc-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));}
+  #rep-kpis{grid-template-columns:repeat(3,1fr)!important;}
 }
 
-/* ── MOBILE RESPONSIVE ── */
+/* ── Mobile (≤768px) ── */
 @media (max-width:768px){
   html{font-size:13px;}
 
-  /* Header */
-  .hdr{padding:0 12px;gap:8px;height:52px;}
-  .hdr-corp{font-size:12px;}
-  .hdr-dept{display:none;}
-  .hdr-div{display:none;}
-  .hdr-date{display:none;}
+  /* — Header — */
+  .hdr{height:52px;padding:0 10px;gap:8px;}
+  .hdr-corp{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+  .hdr-dept,.hdr-div,.hdr-date{display:none;}
   .u-name{display:none;}
-  .logout{padding:5px 10px;font-size:11px;}
-
-  /* Mobile hamburger button in header */
+  .u-chip{font-size:9px;padding:1px 5px;}
+  .user-pill{padding:3px 8px 3px 4px;gap:5px;}
+  .logout{padding:5px 9px;font-size:11px;}
   .mob-menu-btn{display:flex!important;}
 
-  /* Sidebar becomes a slide-over on mobile */
+  /* — Sidebar slide-over — */
   .sidebar{
-    position:fixed;left:-260px;top:52px;bottom:0;z-index:500;
-    width:240px!important;height:calc(100vh - 52px);
+    position:fixed!important;
+    left:-260px;top:52px;bottom:0;z-index:500;
+    width:230px!important;height:calc(100vh - 52px);
     background:var(--card);border-right:1px solid var(--border);
-    box-shadow:var(--sh3);transition:left .25s cubic-bezier(.4,0,.2,1);
+    box-shadow:4px 0 24px rgba(0,0,0,.18);
+    transition:left .25s cubic-bezier(.4,0,.2,1);
     overflow-y:auto;align-items:stretch!important;padding:10px 8px;
+    flex-shrink:0;
   }
-  .sidebar.mob-open{left:0;}
-  .sidebar .sb-tog{display:none;}
-  .sidebar .sbi{width:100%!important;padding:10px 12px!important;}
-  .sidebar .sbi-lb{opacity:1!important;}
+  .sidebar.mob-open{left:0!important;}
+  .sidebar .sb-tog{display:none!important;}
+  .sidebar .sbi{width:100%!important;padding:10px 12px!important;font-size:13px;}
+  .sidebar .sbi-lb{opacity:1!important;display:inline!important;}
   .sidebar .sbi-bd{opacity:1!important;}
   .sidebar .sb-sec{opacity:1!important;height:auto!important;}
-
-  /* Overlay behind sidebar */
   .mob-overlay{display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.4);z-index:499;}
   .mob-overlay.show{display:block;}
 
-  /* Shell */
-  .shell{flex-direction:column;height:calc(100vh - 52px);}
+  /* — Shell & Content — */
+  .shell{flex-direction:row;height:calc(100vh - 52px);}
+  .content{flex:1;padding:10px;overflow-y:auto;overflow-x:hidden;min-width:0;}
 
-  /* Content */
-  .content{padding:12px;overflow-y:auto;}
+  /* — Page header — */
+  .ph{flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:12px;}
+  .ph-title{font-size:17px;}
+  .ph-sub{font-size:11px;}
 
-  /* KPI grid */
-  .kpi-grid{grid-template-columns:repeat(2,1fr);gap:10px;}
+  /* — KPI grid — */
+  .kpi-grid{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;}
+  .kc{padding:12px;}
+  .kc-val{font-size:24px;}
+  .kc-lbl{font-size:10px;}
+  .kc-sub{font-size:9.5px;}
+  .kc-icon{width:30px;height:30px;font-size:14px;}
 
-  /* Dashboard grid rows */
-  .dr1,.dr2,.dr3{grid-template-columns:1fr!important;gap:12px;}
+  /* — Dashboard grids — */
+  .dr1,.dr2,.dr3{grid-template-columns:1fr!important;gap:10px;}
+  #rep-kpis{grid-template-columns:1fr!important;}
 
-  /* Page header */
-  .ph{flex-direction:column;gap:8px;margin-bottom:14px;}
-  .ph-title{font-size:18px;}
+  /* — Cards — */
+  .card{padding:12px;border-radius:10px;}
+  .ct{font-size:10px;margin-bottom:10px;}
 
-  /* Filter bar */
-  .fbar{padding:10px 12px;gap:6px;}
-  .fg{flex-wrap:wrap;}
-  .fsel{font-size:11.5px;padding:5px 8px;}
+  /* — Dash filters — */
+  .dash-filters{flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+  .df-sel{font-size:11.5px;padding:6px 8px;flex:1;min-width:calc(50% - 6px);}
+  .btn-reset{font-size:11px;padding:5px 10px;}
 
-  /* Dash filters */
-  .dash-filters{flex-wrap:wrap;gap:6px;}
-  .df-sel{font-size:11.5px;padding:6px 9px;}
+  /* — Filter bar — */
+  .fbar{flex-direction:column;align-items:stretch;padding:10px;gap:8px;border-radius:10px;}
+  .fg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .fl{min-width:60px;font-size:10px;}
+  .fsel{flex:1;font-size:12px;padding:6px 8px;min-width:0;}
+  .sw{min-width:100%;flex:none;}
+  .sf{font-size:12px;padding:6px 8px 6px 28px;}
+  .fdiv{display:none;}
 
-  /* Table - make it scroll horizontally */
-  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  table{min-width:700px;font-size:12px;}
+  /* — Task table — */
+  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;}
+  table{min-width:650px;font-size:11.5px;}
+  thead th{padding:8px 10px;font-size:9.5px;}
+  tbody td{padding:8px 10px;}
 
-  /* Task cards */
-  .my-task-card{padding:12px 14px;gap:10px;}
+  /* — My Task cards — */
+  .my-task-card{padding:12px;gap:10px;border-radius:10px;}
   .my-task-name{font-size:13px;}
+  .my-task-meta{font-size:11px;}
 
-  /* Modal */
-  .modal{width:100%!important;max-width:100%!important;border-radius:16px 16px 0 0!important;position:fixed!important;bottom:0!important;top:auto!important;max-height:92vh!important;padding:20px 16px!important;}
-  .mo{align-items:flex-end!important;}
-
-  /* Engineer/account grids */
-  .eng-grid,.acc-grid{grid-template-columns:1fr 1fr;gap:10px;}
-
-  /* Cards */
-  .card{padding:14px;}
-
-  /* Reports grid */
-  #rep-kpis{grid-template-columns:1fr 1fr!important;}
-
-  /* Notif panel */
-  .notif-panel{width:280px;right:-8px;}
-
-  /* KPI cards */
-  .kc{padding:14px;}
-  .kc-val{font-size:26px;}
-
-  /* Buttons row */
-  .export-row{gap:6px;}
-  .btn{padding:7px 14px;font-size:12px;}
-  .btn-sm{padding:4px 9px;font-size:11px;}
-
-  /* Add task form */
+  /* — Modal — bottom sheet on mobile — */
+  .mo{align-items:flex-end!important;padding:0!important;}
+  .modal{
+    width:100%!important;max-width:100%!important;
+    border-radius:18px 18px 0 0!important;
+    position:relative!important;
+    max-height:90vh!important;
+    padding:20px 14px!important;
+    margin:0!important;
+  }
+  .mh-title{font-size:16px;}
   .fg2{grid-template-columns:1fr!important;}
   .ff{grid-column:1!important;}
+  .fa{flex-wrap:wrap;gap:8px;}
+  .fa .btn{flex:1;justify-content:center;}
+
+  /* — Engineer / Account grids — */
+  .eng-grid{grid-template-columns:repeat(2,1fr);gap:8px;}
+  .eng-card{padding:14px;}
+  .eng-av{width:44px;height:44px;font-size:14px;}
+  .eng-name{font-size:13px;}
+  .acc-grid{grid-template-columns:repeat(2,1fr);gap:8px;}
+  .acc-card{padding:14px;}
+
+  /* — Buttons — */
+  .btn{padding:7px 12px;font-size:12px;gap:4px;}
+  .btn-sm{padding:4px 8px;font-size:11px;}
+  .export-row{gap:6px;flex-wrap:wrap;}
+
+  /* — Reports member selector — */
+  #rep-member-selector .card>div{flex-direction:column;align-items:flex-start;gap:8px;}
+  #rep-member-selector select{width:100%;}
+
+  /* — Notification panel — */
+  .notif-panel{width:calc(100vw - 20px);right:-10px;max-height:60vh;overflow-y:auto;}
+
+  /* — Toast — */
+  .toast{bottom:16px;right:10px;left:10px;text-align:center;font-size:12px;padding:10px 14px;}
+
+  /* — Ring/donut charts — */
+  .dn-wrap{flex-direction:column;align-items:center;gap:10px;}
+  .ring-wrap svg{width:80px!important;height:80px!important;}
+  .ring-pct{font-size:18px;}
+
+  /* — Timeline — */
+  .tl-name{font-size:12px;}
+  .tl-meta{font-size:10.5px;}
+
+  /* — Gauge — */
+  .gauge-lbl{font-size:11px;min-width:48px;}
+
+  /* — Accounts view settings — */
+  .content > .view#view-accounts .card{overflow-x:auto;}
 }
 
+/* ── Small phones (≤420px) ── */
 @media (max-width:420px){
-  .kpi-grid{grid-template-columns:1fr;}
+  html{font-size:12px;}
+  .hdr{padding:0 8px;gap:6px;}
+  .hdr-corp{max-width:100px;font-size:11px;}
+  .hdr-mark{width:28px;height:28px;font-size:10px;border-radius:7px;}
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:6px;}
+  .kc-val{font-size:20px;}
   .eng-grid,.acc-grid{grid-template-columns:1fr;}
-  #rep-kpis{grid-template-columns:1fr!important;}
-  .hdr-mark{width:28px;height:28px;font-size:11px;}
+  .modal{max-height:95vh!important;}
+  .content{padding:8px;}
+  .card{padding:10px;border-radius:8px;}
+  .btn{padding:6px 10px;font-size:11.5px;}
+  .my-task-card{flex-direction:column;gap:8px;}
+  .my-task-card>div:last-child{width:100%;}
+  .my-task-card .btn{width:100%;justify-content:center;}
+  table{min-width:580px;font-size:11px;}
+  .notif-panel{width:calc(100vw - 10px);right:-5px;}
+  .logout{display:none;}
 }
 
-/* Mobile menu button - hidden on desktop */
-.mob-menu-btn{
-  display:none;
-  width:34px;height:34px;border-radius:9px;border:1px solid var(--border);
-  background:var(--bg);cursor:pointer;align-items:center;justify-content:center;
-  font-size:18px;transition:all .15s;flex-shrink:0;
+/* ── Landscape phones (short height) ── */
+@media (max-height:500px) and (max-width:900px){
+  .sidebar{top:48px;height:calc(100vh - 48px);}
+  .modal{max-height:95vh!important;}
+  .notif-list{max-height:180px;}
 }
-.mob-menu-btn:hover{background:var(--pr-tint);border-color:var(--pr);}
+
 
 </style>
 </head>
@@ -2122,37 +2199,102 @@ function exportPDFFiltered(){
 
 function exportPDFFromTasks(tasks, filename, filterDesc){
   const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'landscape'});
-  doc.setFontSize(16);doc.setFont('helvetica','bold');
-  doc.text('Technosam Corporation – KPI Task Report',14,16);
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const pw=190; // usable page width in portrait A4 (210 - 2*10 margins)
+  const ml=10; // left margin
+
+  // Header
+  doc.setFillColor(139,26,26);doc.rect(0,0,210,22,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(14);doc.setFont('helvetica','bold');
+  doc.text('Technosam Corporation',ml,10);
   doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`Generated: ${new Date().toLocaleString('en-PH')}  |  Tasks shown: ${tasks.length}`,14,24);
-  if(filterDesc){doc.setFontSize(8);doc.setTextColor(100);doc.text(`Filters: ${filterDesc}`,14,30);doc.setTextColor(0);}
+  doc.text('Technical Department · KPI Task Report',ml,16);
+  doc.setTextColor(0,0,0);
+
+  // Meta
+  let y=28;
+  doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(80,80,80);
+  doc.text(`Generated: ${new Date().toLocaleString('en-PH')}   |   Tasks: ${tasks.length}`,ml,y);
+  y+=5;
+  if(filterDesc){doc.setFontSize(7.5);doc.text(`Filters: ${filterDesc}`,ml,y);y+=5;}
+  doc.setTextColor(0,0,0);
+
+  // Summary bar
   const comp=tasks.filter(t=>t.status==='completed').length;
   const rateBase=tasks.filter(t=>t.status!=='cancelled').length;
   const ov=tasks.filter(isOv).length;
   const rate=rateBase?Math.round(comp/rateBase*100):0;
-  doc.setFontSize(10);doc.setFont('helvetica','bold');
-  const summaryY=filterDesc?38:32;
-  doc.text(`Completed: ${comp}   Overdue: ${ov}   Completion Rate: ${rate}%`,14,summaryY);
-  let y=summaryY+10;
-  const cols=[['#',7],['Task Name',52],['Category',24],['Assigned',18],['Priority',14],['Status',19],['Start',18],['Due',18],['End',18],['Delay',12]];
+  doc.setFillColor(240,242,248);doc.roundedRect(ml,y,pw,10,2,2,'F');
+  doc.setFontSize(8.5);doc.setFont('helvetica','bold');
+  doc.text(`✓ Completed: ${comp}   ⚠ Overdue: ${ov}   Rate: ${rate}%`,ml+4,y+6.5);
+  y+=16;
+
+  // Table columns — portrait-optimized widths (total ~190mm)
+  const cols=[
+    ['#',6],['Task Name',55],['Category',26],['Assigned',16],
+    ['Priority',16],['Status',20],['Due Date',20],['Delay',13]
+  ];
   const headers=cols.map(c=>c[0]);
   const widths=cols.map(c=>c[1]);
-  doc.setFillColor(240,242,248);doc.rect(14,y-5,277,8,'F');
-  doc.setFontSize(8);doc.setFont('helvetica','bold');
-  let x=14;headers.forEach((h,i)=>{doc.text(h,x,y);x+=widths[i];});
-  y+=6;doc.setFont('helvetica','normal');
+
+  // Table header row
+  doc.setFillColor(139,26,26);
+  doc.rect(ml,y-4,pw,7,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  let x=ml;
+  headers.forEach((h,i)=>{doc.text(h,x+1,y);x+=widths[i];});
+  y+=5;doc.setTextColor(0,0,0);
+
+  // Table rows
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);
   tasks.forEach((t,i)=>{
-    if(y>190){doc.addPage();y=14;}
-    if(isOv(t)){doc.setFillColor(254,242,242);doc.rect(14,y-4,277,7,'F');}
-    x=14;
+    if(y>275){
+      doc.addPage();
+      y=14;
+      // Reprint header on new page
+      doc.setFillColor(139,26,26);doc.rect(ml,y-4,pw,7,'F');
+      doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');
+      x=ml;headers.forEach((h,j)=>{doc.text(h,x+1,y);x+=widths[j];});
+      y+=5;doc.setTextColor(0,0,0);doc.setFont('helvetica','normal');
+    }
+    const rowH=7;
+    if(i%2===0){doc.setFillColor(248,249,252);}else{doc.setFillColor(255,255,255);}
+    if(isOv(t)){doc.setFillColor(254,242,242);}
+    doc.rect(ml,y-4,pw,rowH,'F');
+
     const delayed=t.endDate&&t.due&&t.endDate>t.due;
-    const delayTxt=delayed?`+${Math.round((new Date(t.endDate)-new Date(t.due))/(1000*60*60*24))}d`:(isOv(t)?'Ov':'');
-    const row=[String(i+1),t.name.slice(0,30),t.category.slice(0,12),getAssignees(t).join(',').slice(0,8),pLbl(t.priority).slice(0,8),sLbl(t.status).slice(0,10),t.startDate||'',t.due||'',t.endDate||'',delayTxt];
-    row.forEach((v,ri)=>{doc.text(String(v),x,y);x+=widths[ri];});
-    y+=7;
+    const delayTxt=delayed?`+${Math.round((new Date(t.endDate)-new Date(t.due))/(1000*60*60*24))}d late`:(isOv(t)?'Overdue':'—');
+    const row=[
+      String(i+1),
+      t.name.slice(0,32),
+      (t.category||'').slice(0,14),
+      getAssignees(t).join(',').slice(0,10),
+      pLbl(t.priority),
+      sLbl(t.status).slice(0,12),
+      t.due||'—',
+      delayTxt
+    ];
+    x=ml;
+    row.forEach((v,ri)=>{
+      if(isOv(t))doc.setTextColor(180,0,0);
+      else doc.setTextColor(30,30,30);
+      doc.text(String(v),x+1,y);
+      x+=widths[ri];
+    });
+    doc.setTextColor(0,0,0);
+    y+=rowH;
   });
+
+  // Footer
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let p=1;p<=pageCount;p++){
+    doc.setPage(p);
+    doc.setFontSize(7);doc.setTextColor(150,150,150);
+    doc.text(`Technosam Corporation – Confidential | Page ${p} of ${pageCount}`,ml,292);
+  }
+
   doc.save(filename+'.pdf');
 }
 
