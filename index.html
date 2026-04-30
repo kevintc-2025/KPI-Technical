@@ -123,7 +123,23 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--tx);min-he
 .notif-btn:hover{background:var(--pr-tint);border-color:var(--pr);}
 .notif-badge{position:absolute;top:-4px;right:-4px;background:var(--rd);color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:1px 5px;min-width:16px;text-align:center;border:2px solid #fff;display:none;}
 .notif-badge.show{display:block;}
-.notif-panel{position:absolute;top:48px;right:0;width:340px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);z-index:200;display:none;overflow:hidden;animation:vFade .18s ease both;}
+.notif-panel{
+  position:fixed;
+  top:56px;
+  right:12px;
+  width:320px;
+  max-width:calc(100vw - 16px);
+  max-height:70vh;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  box-shadow:var(--sh3);
+  z-index:9999;
+  display:none;
+  overflow-y:auto;
+  overflow-x:hidden;
+  animation:vFade .18s ease both;
+}
 .notif-panel.open{display:block;}
 .notif-hdr{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
 .notif-hdr-t{font-size:13px;font-weight:700;}
@@ -284,6 +300,15 @@ tbody tr:last-child td{border-bottom:none;}
 .ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
 .ring-pct{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace;}
 .ring-lbl{font-size:10.5px;color:var(--tx2);font-weight:500;}
+
+/* ── OVERALL PROGRESS LAYOUT ── */
+.progress-layout{display:flex;align-items:center;gap:20px;}
+.progress-ring{width:120px;height:120px;flex-shrink:0;}
+.progress-svg{width:120px;height:120px;}
+.progress-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;min-width:0;}
+.ps-item{border-radius:10px;padding:11px;text-align:center;}
+.ps-val{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;}
+.ps-lbl{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;}
 
 /* ── GAUGE ── */
 .gauge-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
@@ -539,8 +564,7 @@ tbody tr:last-child td{border-bottom:none;}
   #rep-member-selector .card>div{flex-direction:column;align-items:stretch;gap:8px;}
   #rep-member-selector .df-sel{width:100%;}
 
-  /* — Notif panel — */
-  .notif-panel{width:calc(100vw - 16px);right:0;max-height:55vh;overflow-y:auto;}
+  /* — Notif panel — already fixed positioned globally, no override needed — */
 
   /* — Toast — */
   .toast{bottom:14px;right:8px;left:8px;text-align:center;font-size:12px;padding:10px 12px;border-radius:10px;}
@@ -549,6 +573,29 @@ tbody tr:last-child td{border-bottom:none;}
   .dn-wrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;}
   .ring-wrap svg{width:76px!important;height:76px!important;}
   .ring-pct{font-size:17px;}
+
+  /* — Overall Progress mobile: stack ring on top, stats below — */
+  .progress-layout{
+    flex-direction:column!important;
+    align-items:center!important;
+    gap:12px!important;
+  }
+  .progress-ring{
+    width:90px!important;
+    height:90px!important;
+  }
+  .progress-svg{
+    width:90px!important;
+    height:90px!important;
+  }
+  .progress-stats{
+    width:100%!important;
+    flex:unset!important;
+    gap:6px!important;
+  }
+  .ps-val{font-size:18px!important;}
+  .ps-lbl{font-size:9px!important;}
+  .ps-item{padding:8px 4px!important;}
 
   /* — Timeline & gauge — */
   .tl-name{font-size:12px;}
@@ -628,18 +675,9 @@ tbody tr:last-child td{border-bottom:none;}
   <div class="hdr-right">
     <div class="hdr-date" id="hdr-date"></div>
     <!-- Notification Bell -->
-    <div style="position:relative;">
-      <button class="notif-btn" onclick="toggleNotifPanel()" id="notif-btn">🔔
-        <span class="notif-badge" id="notif-badge">0</span>
-      </button>
-      <div class="notif-panel" id="notif-panel">
-        <div class="notif-hdr">
-          <span class="notif-hdr-t">🔔 Notifications</span>
-          <button class="notif-clr" onclick="clearNotifs()">Clear all</button>
-        </div>
-        <div class="notif-list" id="notif-list"></div>
-      </div>
-    </div>
+    <button class="notif-btn" onclick="toggleNotifPanel()" id="notif-btn">🔔
+      <span class="notif-badge" id="notif-badge">0</span>
+    </button>
     <div class="user-pill"><div class="u-av" id="u-av"></div><span class="u-name" id="u-name"></span><span class="u-chip" id="u-chip"></span></div>
     <button class="logout" onclick="doLogout()">Sign Out</button>
   </div>
@@ -703,19 +741,19 @@ tbody tr:last-child td{border-bottom:none;}
     </div>
     <div class="card">
       <div class="ct">Overall Progress</div>
-      <div style="display:flex;align-items:center;gap:22px;">
-        <div class="ring-wrap" style="width:120px;height:120px;">
-          <svg width="120" height="120" viewBox="0 0 120 120">
+      <div class="progress-layout">
+        <div class="ring-wrap progress-ring">
+          <svg class="progress-svg" width="120" height="120" viewBox="0 0 120 120">
             <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg2)" stroke-width="13"/>
             <circle id="ring-c" cx="60" cy="60" r="50" fill="none" stroke="var(--ac)" stroke-width="13" stroke-linecap="round" stroke-dasharray="0 314" transform="rotate(-90 60 60)" style="transition:stroke-dasharray .9s cubic-bezier(.4,0,.2,1)"/>
           </svg>
           <div class="ring-center"><div class="ring-pct" id="ring-pct">0%</div><div class="ring-lbl">Done</div></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;">
-          <div style="background:var(--gr-bg);border-radius:10px;padding:11px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--gr);font-family:'JetBrains Mono',monospace;" id="mc-comp">0</div><div style="font-size:9.5px;color:var(--gr);font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Completed</div></div>
-          <div style="background:var(--rd-bg);border-radius:10px;padding:11px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--rd);font-family:'JetBrains Mono',monospace;" id="mc-ov">0</div><div style="font-size:9.5px;color:var(--rd);font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Overdue</div></div>
-          <div style="background:var(--ac-tint);border-radius:10px;padding:11px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--ac);font-family:'JetBrains Mono',monospace;" id="mc-wk">0</div><div style="font-size:9.5px;color:var(--ac);font-weight:700;text-transform:uppercase;letter-spacing:.4px;">This Week</div></div>
-          <div style="background:var(--or-bg);border-radius:10px;padding:11px;text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--or);font-family:'JetBrains Mono',monospace;" id="mc-nw">0</div><div style="font-size:9.5px;color:var(--or);font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Next Week</div></div>
+        <div class="progress-stats">
+          <div class="ps-item" style="background:var(--gr-bg);"><div class="ps-val" style="color:var(--gr);" id="mc-comp">0</div><div class="ps-lbl" style="color:var(--gr);">Completed</div></div>
+          <div class="ps-item" style="background:var(--rd-bg);"><div class="ps-val" style="color:var(--rd);" id="mc-ov">0</div><div class="ps-lbl" style="color:var(--rd);">Overdue</div></div>
+          <div class="ps-item" style="background:var(--ac-tint);"><div class="ps-val" style="color:var(--ac);" id="mc-wk">0</div><div class="ps-lbl" style="color:var(--ac);">This Week</div></div>
+          <div class="ps-item" style="background:var(--or-bg);"><div class="ps-val" style="color:var(--or);" id="mc-nw">0</div><div class="ps-lbl" style="color:var(--or);">Next Week</div></div>
         </div>
       </div>
     </div>
@@ -1175,10 +1213,24 @@ function updateNotifBadge(){
   if(badge){badge.textContent=unread;badge.classList.toggle('show',unread>0);}
 }
 function toggleNotifPanel(){
-  const panel=$('notif-panel');
+  var panel=$('notif-panel');
   if(!panel)return;
   panel.classList.toggle('open');
-  if(panel.classList.contains('open'))renderNotifPanel();
+  if(panel.classList.contains('open')){
+    renderNotifPanel();
+    // Position panel below the bell button
+    var btn=$('notif-btn');
+    if(btn){
+      var rect=btn.getBoundingClientRect();
+      var panelW=Math.min(320,window.innerWidth-16);
+      var left=rect.right-panelW;
+      if(left<8)left=8;
+      panel.style.top=(rect.bottom+6)+'px';
+      panel.style.left=left+'px';
+      panel.style.right='auto';
+      panel.style.width=panelW+'px';
+    }
+  }
 }
 function renderNotifPanel(){
   const list=$('notif-list');if(!list)return;
@@ -1200,10 +1252,12 @@ function clearNotifs(){
 }
 
 // Close notif panel on outside click
-document.addEventListener('click',e=>{
-  const panel=$('notif-panel');
-  const btn=$('notif-btn');
-  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target))panel.classList.remove('open');
+document.addEventListener('click',function(e){
+  var panel=$('notif-panel');
+  var btn=$('notif-btn');
+  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target)){
+    panel.classList.remove('open');
+  }
 });
 
 // ─── INIT APP ─────────────────────────────────
@@ -1915,9 +1969,9 @@ function renderReports(){
       const col=er>=80?'var(--gr)':er>=50?'var(--ac)':'var(--rd)';
       return`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span style="font-weight:700;display:flex;align-items:center;gap:8px;">
-            <span style="width:26px;height:26px;border-radius:50%;background:${acc.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${acc.init.slice(0,2)}</span>
-            ${acc.init} – ${acc.fullName||acc.display}
+          <span style="font-weight:700;display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+            <span style="width:26px;height:26px;border-radius:50%;background:${acc.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;">${acc.init.slice(0,2)}</span>
+            <span style="word-break:break-word;min-width:0;">${acc.init} – ${acc.fullName||acc.display}</span>
           </span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:${col}">${er}%</span>
         </div>
@@ -1935,16 +1989,20 @@ function renderReports(){
     const erBase=et.filter(t=>t.status!=='cancelled').length;
     const er=erBase?Math.round(ec/erBase*100):0;
     const col=er>=80?'var(--gr)':er>=50?'var(--ac)':'var(--rd)';
-    $('rep-eng').innerHTML=`<div style="display:flex;align-items:center;gap:16px;padding:10px 0;">
-      <span style="width:48px;height:48px;border-radius:50%;background:${acc?.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;">${(acc?.init||selMember).slice(0,2)}</span>
-      <div style="flex:1;">
-        <div style="font-weight:700;font-size:14px;">${acc?.fullName||acc?.display||selMember}</div>
-        <div style="font-size:11.5px;color:var(--tx2);">${acc?.position||'Engineer'}</div>
-        <div class="gauge-track" style="margin-top:8px;"><div class="gauge-fill" style="width:${er}%;background:${col};"></div></div>
-        <div style="font-size:11px;color:var(--tx2);margin-top:5px;display:flex;gap:12px;">
-          <span>Total: <b>${et.length}</b></span><span style="color:var(--gr)">Done: <b>${ec}</b></span><span style="color:var(--rd)">Overdue: <b>${eo}</b></span>
-          <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:${col}">${er}% completion</span>
+    $('rep-eng').innerHTML=`<div style="padding:10px 0;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="width:44px;height:44px;border-radius:50%;background:${acc?.color||'#64748b'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">${(acc?.init||selMember).slice(0,2)}</span>
+        <div style="min-width:0;flex:1;">
+          <div style="font-weight:700;font-size:14px;word-break:break-word;">${acc?.fullName||acc?.display||selMember}</div>
+          <div style="font-size:11.5px;color:var(--tx2);">${acc?.position||'Engineer'}</div>
         </div>
+      </div>
+      <div class="gauge-track" style="margin-bottom:8px;"><div class="gauge-fill" style="width:${er}%;background:${col};"></div></div>
+      <div style="font-size:11px;color:var(--tx2);display:flex;gap:10px;flex-wrap:wrap;">
+        <span>Total: <b>${et.length}</b></span>
+        <span style="color:var(--gr)">Done: <b>${ec}</b></span>
+        <span style="color:var(--rd)">Overdue: <b>${eo}</b></span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:800;color:${col}">${er}% done</span>
       </div>
     </div>`;
   }
@@ -2209,134 +2267,101 @@ function exportPDFFiltered(){
 }
 
 function exportPDFFromTasks(tasks, filename, filterDesc){
-  var jsPDF=window.jspdf.jsPDF;
-  var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  var pw=190; // portrait A4 usable width: 210 - 2*10 margins
-  var ml=10;  // left margin
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const pw=190; // usable page width in portrait A4 (210 - 2*10 margins)
+  const ml=10; // left margin
 
-  // ── Header banner ──
-  doc.setFillColor(139,26,26);
-  doc.rect(0,0,210,22,'F');
+  // Header
+  doc.setFillColor(139,26,26);doc.rect(0,0,210,22,'F');
   doc.setTextColor(255,255,255);
   doc.setFontSize(14);doc.setFont('helvetica','bold');
   doc.text('Technosam Corporation',ml,10);
   doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text('Technical Department - KPI Task Report',ml,16);
+  doc.text('Technical Department · KPI Task Report',ml,16);
   doc.setTextColor(0,0,0);
 
-  // ── Meta info ──
-  var y=28;
+  // Meta
+  let y=28;
   doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(80,80,80);
-  doc.text('Generated: '+new Date().toLocaleString('en-PH')+'   |   Tasks: '+tasks.length,ml,y);
+  doc.text(`Generated: ${new Date().toLocaleString('en-PH')}   |   Tasks: ${tasks.length}`,ml,y);
   y+=5;
-  if(filterDesc){
-    doc.setFontSize(7.5);
-    // strip any HTML/special chars
-    var safeFilter=String(filterDesc).replace(/[&<>"']/g,' ');
-    doc.text('Filters: '+safeFilter,ml,y,{maxWidth:pw});
-    y+=5;
-  }
+  if(filterDesc){doc.setFontSize(7.5);doc.text(`Filters: ${filterDesc}`,ml,y);y+=5;}
   doc.setTextColor(0,0,0);
 
-  // ── Summary bar ──
-  var comp=tasks.filter(function(t){return t.status==='completed';}).length;
-  var rateBase=tasks.filter(function(t){return t.status!=='cancelled';}).length;
-  var ov=tasks.filter(isOv).length;
-  var rate=rateBase?Math.round(comp/rateBase*100):0;
-  doc.setFillColor(240,242,248);
-  doc.roundedRect(ml,y,pw,10,2,2,'F');
-  doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(30,30,30);
-  doc.text('Completed: '+comp+'    Overdue: '+ov+'    Completion Rate: '+rate+'%',ml+4,y+6.5);
-  doc.setTextColor(0,0,0);
+  // Summary bar
+  const comp=tasks.filter(t=>t.status==='completed').length;
+  const rateBase=tasks.filter(t=>t.status!=='cancelled').length;
+  const ov=tasks.filter(isOv).length;
+  const rate=rateBase?Math.round(comp/rateBase*100):0;
+  doc.setFillColor(240,242,248);doc.roundedRect(ml,y,pw,10,2,2,'F');
+  doc.setFontSize(8.5);doc.setFont('helvetica','bold');
+  doc.text(`Completed: ${comp}   Overdue: ${ov}   Completion Rate: ${rate}%`,ml+4,y+6.5);
   y+=16;
 
-  // ── Column definitions — portrait A4, total = 190mm ──
-  // #(5) | Task Name(46) | Category(24) | Assigned(16) | Priority(15) | Status(18) | Start(22) | Due(22) | End(22) | Delay(—included in last)
-  // Total: 5+46+24+16+15+18+22+22+22 = 190 exactly
-  var cols=[
-    ['#',5],
-    ['Task Name',46],
-    ['Category',24],
-    ['Assigned',16],
-    ['Priority',15],
-    ['Status',18],
-    ['Start Date',22],
-    ['Due Date',22],
-    ['End Date',22]
+  // Table columns — portrait-optimized widths (total ~190mm)
+  const cols=[
+    ['#',6],['Task Name',55],['Category',26],['Assigned',16],
+    ['Priority',16],['Status',20],['Due Date',20],['Delay',13]
   ];
-  var headers=cols.map(function(c){return c[0];});
-  var widths=cols.map(function(c){return c[1];});
+  const headers=cols.map(c=>c[0]);
+  const widths=cols.map(c=>c[1]);
 
-  // helper: draw table header row
-  function drawHeader(yy){
-    doc.setFillColor(139,26,26);
-    doc.rect(ml,yy-4,pw,7,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(7);doc.setFont('helvetica','bold');
-    var xx=ml;
-    headers.forEach(function(h,i){doc.text(h,xx+1,yy);xx+=widths[i];});
-    doc.setTextColor(0,0,0);
-    return yy+5;
-  }
+  // Table header row
+  doc.setFillColor(139,26,26);
+  doc.rect(ml,y-4,pw,7,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(7.5);doc.setFont('helvetica','bold');
+  let x=ml;
+  headers.forEach((h,i)=>{doc.text(h,x+1,y);x+=widths[i];});
+  y+=5;doc.setTextColor(0,0,0);
 
-  y=drawHeader(y);
-  doc.setFont('helvetica','normal');doc.setFontSize(7.2);
-
-  tasks.forEach(function(t,i){
-    // Page break
+  // Table rows
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+  tasks.forEach((t,i)=>{
     if(y>275){
       doc.addPage();
       y=14;
-      y=drawHeader(y);
-      doc.setFont('helvetica','normal');doc.setFontSize(7.2);
+      // Reprint header on new page
+      doc.setFillColor(139,26,26);doc.rect(ml,y-4,pw,7,'F');
+      doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');
+      x=ml;headers.forEach((h,j)=>{doc.text(h,x+1,y);x+=widths[j];});
+      y+=5;doc.setTextColor(0,0,0);doc.setFont('helvetica','normal');
     }
-
-    var rowH=7;
-    // Alternating row background
+    const rowH=7;
+    if(i%2===0){doc.setFillColor(248,249,252);}else{doc.setFillColor(255,255,255);}
     if(isOv(t)){doc.setFillColor(254,242,242);}
-    else if(i%2===0){doc.setFillColor(248,249,252);}
-    else{doc.setFillColor(255,255,255);}
     doc.rect(ml,y-4,pw,rowH,'F');
 
-    // Task name — truncate to fit column width (~46mm at font 7.2 ≈ ~30 chars)
-    var taskName=t.name||'';
-    if(taskName.length>32)taskName=taskName.slice(0,30)+'..';
-
-    var catName=(t.category||'').replace('After Sales Service','After Sales').replace('Technical Report','Tech. Report').replace('Project Proposal','Proj. Proposal').replace('Client Inquiry','Client Inq.');
-    if(catName.length>14)catName=catName.slice(0,13)+'..';
-
-    var assignees=getAssignees(t).join(', ');
-    if(assignees.length>12)assignees=assignees.slice(0,11)+'..';
-
-    var row=[
+    const delayed=t.endDate&&t.due&&t.endDate>t.due;
+    const delayTxt=delayed?`+${Math.round((new Date(t.endDate)-new Date(t.due))/(1000*60*60*24))}d late`:(isOv(t)?'Overdue':'—');
+    const row=[
       String(i+1),
-      taskName,
-      catName,
-      assignees,
+      t.name.slice(0,32),
+      (t.category||'').slice(0,14),
+      getAssignees(t).join(',').slice(0,10),
       pLbl(t.priority),
-      sLbl(t.status).replace('Not Started','Not Strtd').replace('In Progress','In Prog.').replace('Completed','Done').replace('Cancelled','Cancld'),
-      t.startDate||'—',
+      sLbl(t.status).slice(0,12),
       t.due||'—',
-      t.endDate||'—'
+      delayTxt
     ];
-
-    var xx=ml;
-    row.forEach(function(v,ri){
+    x=ml;
+    row.forEach((v,ri)=>{
       if(isOv(t))doc.setTextColor(180,0,0);
       else doc.setTextColor(30,30,30);
-      doc.text(String(v),xx+1,y);
-      xx+=widths[ri];
+      doc.text(String(v),x+1,y);
+      x+=widths[ri];
     });
     doc.setTextColor(0,0,0);
     y+=rowH;
   });
 
-  // ── Footer on every page ──
-  var pageCount=doc.internal.getNumberOfPages();
-  for(var p=1;p<=pageCount;p++){
+  // Footer
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let p=1;p<=pageCount;p++){
     doc.setPage(p);
     doc.setFontSize(7);doc.setTextColor(150,150,150);
-    doc.text('Technosam Corporation - Confidential | Page '+p+' of '+pageCount,ml,292);
+    doc.text(`Technosam Corporation – Confidential | Page ${p} of ${pageCount}`,ml,292);
   }
 
   doc.save(filename+'.pdf');
@@ -2459,5 +2484,13 @@ function importJSON(e){
   }
 })();
 </script>
+<!-- Notification Panel — fixed overlay, outside header -->
+<div class="notif-panel" id="notif-panel">
+  <div class="notif-hdr">
+    <span class="notif-hdr-t">🔔 Notifications</span>
+    <button class="notif-clr" onclick="clearNotifs()">Clear all</button>
+  </div>
+  <div class="notif-list" id="notif-list"></div>
+</div>
 </body>
 </html>
