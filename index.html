@@ -1131,21 +1131,57 @@ const DEFAULT_ACCOUNTS=[
 let ACCOUNTS=JSON.parse(localStorage.getItem(SK.accounts)||'null')||DEFAULT_ACCOUNTS;
 let CU=null;
 const isAdmin=()=>CU?.role==='admin';
-function saveAccounts(){localStorage.setItem(SK.accounts,JSON.stringify(ACCOUNTS));if(window._fbSet)window._fbSet('kpi/accounts',ACCOUNTS);}
+
+// ─── PASSWORD SECURITY ────────────────────────
+// FNV-1a 32-bit hash — one-way, passwords never stored as plaintext
+function hashPw(str){
+  let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=(h*0x01000193)>>>0;}
+  return h.toString(16);
+}
+function scrubAccounts(){
+  ACCOUNTS=ACCOUNTS.map(a=>{
+    if(a.p&&!a.ph){a.ph=hashPw(a.p);delete a.p;}
+    return a;
+  });
+}
+function checkPw(acc,plain){
+  if(acc.ph)return acc.ph===hashPw(plain);
+  if(acc.p)return acc.p===plain;
+  return false;
+}
+
+function saveAccounts(){
+  scrubAccounts();
+  localStorage.setItem(SK.accounts,JSON.stringify(ACCOUNTS));
+  if(window._fbSet)window._fbSet('kpi/accounts',ACCOUNTS);
+}
 const CYEAR=new Date().getFullYear();
 const DEFAULT_YEAR_RANGE={min:CYEAR-4,max:CYEAR+4};
 let YEAR_RANGE=JSON.parse(localStorage.getItem(SK.yearRange)||'null')||DEFAULT_YEAR_RANGE;
 function saveYearRange(){localStorage.setItem(SK.yearRange,JSON.stringify(YEAR_RANGE));if(window._fbSet)window._fbSet('kpi/yearRange',YEAR_RANGE);}
 
+// ─── SESSION PERSISTENCE ─────────────────────
+const SK_SESSION='tsc_session';
+
 // ─── LOGIN ────────────────────────────────────
 function doLogin(){
   const u=$('li-u').value.trim().toLowerCase(),p=$('li-p').value;
-  const a=ACCOUNTS.find(x=>x.u===u&&x.p===p);
+  const a=ACCOUNTS.find(x=>x.u===u&&checkPw(x,p));
   if(!a){$('li-err').style.display='block';return;}
-  CU=a;$('login-screen').style.display='none';$('app').style.display='block';
+  // Hash any unhashed passwords now and persist
+  if(a.p&&!a.ph){a.ph=hashPw(a.p);delete a.p;saveAccounts();}
+  CU=a;
+  sessionStorage.setItem(SK_SESSION,JSON.stringify({id:CU.id}));
+  $('login-screen').style.display='none';$('app').style.display='block';
   initApp();
 }
-function doLogout(){CU=null;$('login-screen').style.display='flex';$('app').style.display='none';$('li-p').value='';$('li-err').style.display='none';}
+function doLogout(){
+  CU=null;
+  sessionStorage.removeItem(SK_SESSION);
+  $('login-screen').style.display='flex';$('app').style.display='none';
+  $('li-p').value='';$('li-err').style.display='none';
+}
 $('li-p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 $('li-u').addEventListener('keydown',e=>{if(e.key==='Enter')$('li-p').focus();});
 
@@ -2149,9 +2185,10 @@ function saveAccount(){
   if(id){
     const idx=ACCOUNTS.findIndex(a=>a.id===id);if(idx<0)return;
     ACCOUNTS[idx]={...ACCOUNTS[idx],fullName:name,display:init,init,position:$('acc-role').value.trim(),email,u:user,role,color:_selColor};
-    if(pass)ACCOUNTS[idx].p=pass;
+    if(pass)ACCOUNTS[idx].ph=hashPw(pass);
+    delete ACCOUNTS[idx].p;
   } else {
-    ACCOUNTS.push({id:uid(),fullName:name,display:init,init,position:$('acc-role').value.trim(),email,u:user,p:pass,role,color:_selColor});
+    ACCOUNTS.push({id:uid(),fullName:name,display:init,init,position:$('acc-role').value.trim(),email,u:user,ph:hashPw(pass),role,color:_selColor});
   }
   saveAccounts();closeMo('accMo');populateRepMemberSel();refreshAllViews();
   // Refresh current user display if editing self
@@ -2183,7 +2220,9 @@ function toast(msg,type='gr'){
 
 // ─── EXPORT / IMPORT ──────────────────────────
 function exportJSON(){
-  const data={tasks:TASKS,accounts:ACCOUNTS.filter(a=>a.id!=='acc-admin'),notifs:NOTIFS,exportedAt:new Date().toISOString()};
+  scrubAccounts();
+  const safeAccounts=ACCOUNTS.filter(a=>a.id!=='acc-admin').map(a=>{const c={...a};delete c.p;return c;});
+  const data={tasks:TASKS,accounts:safeAccounts,notifs:NOTIFS,exportedAt:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download=`technosam-kpi-${today()}.json`;a.click();
@@ -2253,10 +2292,21 @@ function exportPDFFiltered(){
   toast(`PDF exported! ${tasks.length} task${tasks.length!==1?'s':''} ${hasFilters?'(filtered)':''}📄`,'ac');
 }
 
+function exportMyCSV(){
+  const tasks=TASKS.filter(t=>getAssignees(t).includes(CU.init));
+  exportCSVFromTasks(tasks,'technosam-my-tasks-'+today());
+  toast(`CSV exported! ${tasks.length} task${tasks.length!==1?'s':''}📊`,'ac');
+}
+function exportMyPDF(){
+  const tasks=TASKS.filter(t=>getAssignees(t).includes(CU.init));
+  exportPDFFromTasks(tasks,'technosam-my-tasks-'+today(),`Member: ${CU.init}`);
+  toast(`PDF exported! ${tasks.length} task${tasks.length!==1?'s':''}📄`,'ac');
+}
+
 function exportPDFFromTasks(tasks, filename, filterDesc){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const pw=190; // usable page width in portrait A4 (210 - 2*10 margins)
+  const pw=190; // usable page width portrait A4 (210 - 2*10 margins)
   const ml=10; // left margin
 
   // Header
@@ -2286,34 +2336,35 @@ function exportPDFFromTasks(tasks, filename, filterDesc){
   doc.text(`Completed: ${comp}   Overdue: ${ov}   Completion Rate: ${rate}%`,ml+4,y+6.5);
   y+=16;
 
-  // Table columns — portrait-optimized widths (total ~190mm)
+  // Table columns — portrait A4, total 190mm
+  // #(5) | Task(40) | Category(22) | Assigned(14) | Priority(13) | Status(17) | Start(20) | Due(20) | End(20) | Delay(19)
   const cols=[
-    ['#',6],['Task Name',55],['Category',26],['Assigned',16],
-    ['Priority',16],['Status',20],['Due Date',20],['Delay',13]
+    ['#',5],['Task Name',40],['Category',22],['Assigned',14],
+    ['Priority',13],['Status',17],['Start Date',20],['Due Date',20],['End Date',20],['Delay',19]
   ];
   const headers=cols.map(c=>c[0]);
   const widths=cols.map(c=>c[1]);
 
-  // Table header row
-  doc.setFillColor(139,26,26);
-  doc.rect(ml,y-4,pw,7,'F');
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-  let x=ml;
-  headers.forEach((h,i)=>{doc.text(h,x+1,y);x+=widths[i];});
-  y+=5;doc.setTextColor(0,0,0);
+  function printTableHeader(yPos){
+    doc.setFillColor(139,26,26);
+    doc.rect(ml,yPos-4,pw,7,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+    let x=ml;
+    headers.forEach((h,i)=>{doc.text(h,x+1,yPos);x+=widths[i];});
+    doc.setTextColor(0,0,0);doc.setFont('helvetica','normal');
+    return yPos+5;
+  }
+
+  y=printTableHeader(y);
 
   // Table rows
-  doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+  doc.setFont('helvetica','normal');doc.setFontSize(6.5);
   tasks.forEach((t,i)=>{
     if(y>275){
       doc.addPage();
       y=14;
-      // Reprint header on new page
-      doc.setFillColor(139,26,26);doc.rect(ml,y-4,pw,7,'F');
-      doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');
-      x=ml;headers.forEach((h,j)=>{doc.text(h,x+1,y);x+=widths[j];});
-      y+=5;doc.setTextColor(0,0,0);doc.setFont('helvetica','normal');
+      y=printTableHeader(y);
     }
     const rowH=7;
     if(i%2===0){doc.setFillColor(248,249,252);}else{doc.setFillColor(255,255,255);}
@@ -2324,15 +2375,17 @@ function exportPDFFromTasks(tasks, filename, filterDesc){
     const delayTxt=delayed?`+${Math.round((new Date(t.endDate)-new Date(t.due))/(1000*60*60*24))}d late`:(isOv(t)?'Overdue':'—');
     const row=[
       String(i+1),
-      t.name.slice(0,32),
+      t.name.slice(0,28),
       (t.category||'').slice(0,14),
-      getAssignees(t).join(',').slice(0,10),
+      getAssignees(t).join(',').slice(0,9),
       pLbl(t.priority),
-      sLbl(t.status).slice(0,12),
+      sLbl(t.status).slice(0,11),
+      t.startDate||'—',
       t.due||'—',
+      t.endDate||'—',
       delayTxt
     ];
-    x=ml;
+    let x=ml;
     row.forEach((v,ri)=>{
       if(isOv(t))doc.setTextColor(180,0,0);
       else doc.setTextColor(30,30,30);
@@ -2343,7 +2396,7 @@ function exportPDFFromTasks(tasks, filename, filterDesc){
     y+=rowH;
   });
 
-  // Footer
+  // Footer on every page
   const pageCount=doc.internal.getNumberOfPages();
   for(let p=1;p<=pageCount;p++){
     doc.setPage(p);
@@ -2455,9 +2508,28 @@ function importJSON(e){
       if(window._fbSet) window._fbSet('kpi/accounts', ACCOUNTS);
     }
 
+    // Scrub plaintext passwords from memory and storage on every load
+    scrubAccounts();
+    saveAccounts();
+
     // Dismiss loading overlay — login screen will show underneath
     setTimeout(function(){
       if(overlay) overlay.style.display='none';
+
+      // Restore session if user was previously logged in this browser tab session
+      try{
+        var sess=sessionStorage.getItem(SK_SESSION);
+        if(sess){
+          var parsed=JSON.parse(sess);
+          var acc=ACCOUNTS.find(function(a){return a.id===parsed.id;});
+          if(acc){
+            CU=acc;
+            document.getElementById('login-screen').style.display='none';
+            document.getElementById('app').style.display='block';
+            initApp();
+          }
+        }
+      }catch(e){}
     },300);
   }
 
