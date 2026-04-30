@@ -1318,7 +1318,10 @@ function closeMobileSb(){
   $('mob-overlay').classList.remove('show');
 }
 function updateBadges(){
-  set('sb-ov',TASKS.filter(isOv).length);
+  const ovCount=isAdmin()
+    ? TASKS.filter(isOv).length
+    : TASKS.filter(t=>isOv(t)&&getAssignees(t).includes(CU?.init)).length;
+  set('sb-ov',ovCount);
 }
 
 // ─── VIEWS ────────────────────────────────────
