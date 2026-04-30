@@ -1164,13 +1164,13 @@ function sendTaskEmail(toEmail, toName, taskName, dueDate, notes){
   if(!toEmail)return;
   if(typeof emailjs==='undefined')return;
   emailjs.send(EJ_SVC, EJ_TPL, {
-    to_email: toEmail,
-    to_name: toName,
-    from_name: 'Technosam KPI Tracker',
-    task_name: taskName,
-    due_date: dueDate||'—',
-    notes: notes||'No additional notes.'
-  }).catch(()=>{});
+    email:      toEmail,
+    to_name:    toName||toEmail,
+    task_name:  taskName,
+    due_date:   dueDate||'—',
+    notes:      notes||'No additional notes.',
+    from_name:  'Technosam KPI Tracker'
+  }).catch(function(err){ console.warn('EmailJS error:', err); });
 }
 
 // ─── STORAGE KEYS ─────────────────────────────
